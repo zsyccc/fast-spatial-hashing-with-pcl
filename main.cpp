@@ -25,7 +25,7 @@ pcl::PointCloud<pcl::Normal>::Ptr get_normals(
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        printf("no enough param\n");
+        console::print_error("no enough param\n");
         return (-1);
     }
 

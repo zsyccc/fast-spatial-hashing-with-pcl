@@ -1,4 +1,4 @@
-
+#include "mesh_sampling.h"
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/io/vtk_lib_io.h>
