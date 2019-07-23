@@ -5,7 +5,6 @@
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
-#include <pcl/pcl_macros.h>
 
 struct PointNormalT {
     PCL_ADD_POINT4D;
@@ -36,9 +35,8 @@ private:
 
     bool metric2_proxy_normal(const std::vector<int>& region,
                               pcl::PointNormal& normal);
-
     float error_metric(const PointNormalT& point, const Proxy& proxy) const;
-
+    void proxy_fitting(const std::vector<int>& region, Proxy& p);
     struct PQElement;
 
 public:
@@ -47,8 +45,11 @@ public:
     void setMetricOption(int option);
     void setEps(float eps);
     void setK(int k);
-    void proxy_fitting(const std::vector<int>& region, Proxy& p);
     std::vector<std::vector<int>> compute();
 };
+
+#ifdef PCL_NO_PRECOMPILE
+#include "vsa.hpp"
+#endif
 
 #endif

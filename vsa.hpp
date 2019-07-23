@@ -1,3 +1,5 @@
+#pragma once
+
 #ifndef _VSA_HPP
 #define _VSA_HPP_
 
@@ -89,6 +91,36 @@ float VSA<PointT>::error_metric(const PointNormalT& point,
 }
 
 template <typename PointT>
+void VSA<PointT>::proxy_fitting(const std::vector<int>& region, Proxy& p) {
+    // calculate barycenters
+    p.x = p.y = p.z = p.normal_x = p.normal_y = p.normal_z = 0.0f;
+    for (auto region_idx : region) {
+        p.x += cloud->points[region_idx].x;
+        p.y += cloud->points[region_idx].y;
+        p.z += cloud->points[region_idx].z;
+    }
+    p.x /= region.size();
+    p.y /= region.size();
+    p.z /= region.size();
+
+    // calculate normals
+    if (metric_option == 1) {
+        if (metric2_proxy_normal(region, p) == false) {
+            printf("Error when calculating normal of a proxy!");
+        }
+    } else if (metric_option == 2) {
+        for (auto region_idx : region) {
+            p.normal_x += cloud->points[region_idx].normal_x;
+            p.normal_y += cloud->points[region_idx].normal_y;
+            p.normal_z += cloud->points[region_idx].normal_z;
+        }
+        p.normal_x /= region.size();
+        p.normal_y /= region.size();
+        p.normal_z /= region.size();
+    }
+}
+
+template <typename PointT>
 struct VSA<PointT>::PQElement {
     int index;
     int tag;
@@ -126,36 +158,6 @@ void VSA<PointT>::setEps(float eps) {
 template <typename PointT>
 void VSA<PointT>::setK(int k) {
     this->k = k;
-}
-
-template <typename PointT>
-void VSA<PointT>::proxy_fitting(const std::vector<int>& region, Proxy& p) {
-    // calculate barycenters
-    p.x = p.y = p.z = p.normal_x = p.normal_y = p.normal_z = 0.0f;
-    for (auto region_idx : region) {
-        p.x += cloud->points[region_idx].x;
-        p.y += cloud->points[region_idx].y;
-        p.z += cloud->points[region_idx].z;
-    }
-    p.x /= region.size();
-    p.y /= region.size();
-    p.z /= region.size();
-
-    // calculate normals
-    if (metric_option == 1) {
-        if (metric2_proxy_normal(region, p) == false) {
-            printf("Error when calculating normal of a proxy!");
-        }
-    } else if (metric_option == 2) {
-        for (auto region_idx : region) {
-            p.normal_x += cloud->points[region_idx].normal_x;
-            p.normal_y += cloud->points[region_idx].normal_y;
-            p.normal_z += cloud->points[region_idx].normal_z;
-        }
-        p.normal_x /= region.size();
-        p.normal_y /= region.size();
-        p.normal_z /= region.size();
-    }
 }
 
 template <typename PointT>
