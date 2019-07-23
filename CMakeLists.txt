@@ -42,14 +42,13 @@ add_executable(fsh
     main.cpp
     mesh_sampling.h
     mesh_sampling.cpp
-    # voxelize.hpp
-    # voxelize.cpp
-    # point.hpp
+    vsa.h
+    vsa.hpp
+    vsa.cpp
 )
 
 target_link_libraries (fsh 
     ${PCL_LIBRARIES}
-    # ${PCL_IO_LIBRARIES}
 )
 
 foreach(file ${filelists})

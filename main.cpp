@@ -6,7 +6,7 @@
 #include <mesh_sampling.h>
 #include <random>
 #include <queue>
-#include <vsa.hpp>
+#include <vsa.h>
 
 using namespace std;
 using namespace pcl;
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
     //                                     default_leaf_size);
 
     // clustering
-    VSA vsa;
+    VSA<PointNormal> vsa;
     vsa.setInputCloud(pNormal);
     vsa.setMetricOption(2);
     vsa.setEps(0.01);
