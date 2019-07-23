@@ -48,8 +48,4 @@ public:
     std::vector<std::vector<int>> compute();
 };
 
-#ifdef PCL_NO_PRECOMPILE
-#include "vsa.hpp"
-#endif
-
 #endif
