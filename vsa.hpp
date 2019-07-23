@@ -94,25 +94,24 @@ public:
         return false;
     }
 
-    float error_metric(int index, int tag) const {
+    float error_metric(const PointNormalT& point, const Proxy& proxy) const {
         if (metric_option == 1) {
-            pcl::PointNormal n;
-            pcl::copyPoint(proxies[tag], n);
-            const auto& point = cloud->points[index];
-            float t1 = point.x * n.normal_x + point.y * n.normal_y +
-                       point.z * n.normal_z -
-                       (n.x * n.normal_x + n.y * n.normal_y + n.z * n.normal_z);
-            float t2 = n.normal_x * n.normal_x + n.normal_y * n.normal_y +
-                       n.normal_z * n.normal_z;
+            float t1 = point.x * proxy.normal_x + point.y * proxy.normal_y +
+                       point.z * proxy.normal_z -
+                       (proxy.x * proxy.normal_x + proxy.y * proxy.normal_y +
+                        proxy.z * proxy.normal_z);
+            float t2 = proxy.normal_x * proxy.normal_x +
+                       proxy.normal_y * proxy.normal_y +
+                       proxy.normal_z * proxy.normal_z;
             return sqrt(t1 * t1 / t2);
         } else if (metric_option == 2) {
-            pcl::Normal n;
-            pcl::copyPoint(cloud->points[index], n);
-            n.normal_x -= proxies[tag].normal_x;
-            n.normal_y -= proxies[tag].normal_y;
-            n.normal_z -= proxies[tag].normal_z;
-            return n.normal_x * n.normal_x + n.normal_y * n.normal_y +
-                   n.normal_z * n.normal_z;
+            PointNormalT p;
+            pcl::copyPoint(point, p);
+            p.normal_x -= proxy.normal_x;
+            p.normal_y -= proxy.normal_y;
+            p.normal_z -= proxy.normal_z;
+            return p.normal_x * p.normal_x + p.normal_y * p.normal_y +
+                   p.normal_z * p.normal_z;
         }
     }
 
@@ -123,7 +122,8 @@ public:
         const VSA* vsa;
         PQElement(int id, int t, const VSA* _vsa)
             : index(id), tag(t), vsa(_vsa) {
-            error = vsa->error_metric(index, tag);
+            error =
+                vsa->error_metric(vsa->cloud->points[index], vsa->proxies[tag]);
         }
         bool operator<(const PQElement& rhs) const { return error > rhs.error; }
     };
@@ -161,7 +161,7 @@ public:
             if (metric2_proxy_normal(region, p) == false) {
                 printf("Error when calculating normal of a proxy!");
             }
-        } else {
+        } else if (metric_option == 2) {
             for (auto region_idx : region) {
                 p.normal_x += cloud->points[region_idx].normal_x;
                 p.normal_y += cloud->points[region_idx].normal_y;
@@ -200,6 +200,7 @@ public:
             for (int it = 0; it < cloud->size(); it++) {
                 cloud->points[it].assigned = false;
             }
+
             // initialize for the very first partitioning
             // pick k points at random and push them in 'barycenters'
             if (generation == 0) {
@@ -264,12 +265,10 @@ public:
             }
 
             // merge 2 proxies and insert 1 proxy for each iteration
-            // Proxy merging_proxy=
-            // float smallest_merge_error = total_error_new;
+            // float smallest_merge_error = INFINITY;
             // int smallest_merge_error_index = -1;
             // for (int i = 0; i < k - 1; i++) {
             //     std::vector<int> merging_region;
-            //     cur_partition[i];
             //     merging_region.reserve(cur_partition[i].size() +
             //                            cur_partition[i + 1].size());
             //     std::copy(cur_partition[i].begin(), cur_partition[i].end(),
@@ -277,9 +276,19 @@ public:
             //     std::copy(cur_partition[i + 1].begin(),
             //               cur_partition[i + 1].end(),
             //               back_inserter(merging_region));
-
-            //     for (auto it :) {
+            //     Proxy merging_proxy;
+            //     proxy_fitting(merging_region, merging_proxy);
+            //     float merging_error = 0.0f;
+            //     for (auto it : merging_region) {
+            //         merging_error +=
+            //             error_metric(cloud->points[it], merging_proxy);
             //     }
+            //     if (merging_error < smallest_merge_error) {
+            //         smallest_merge_error = merging_error;
+            //         smallest_merge_error_index = i;
+            //     }
+            // }
+            // insertion...
 
             // proxy fitting
             proxies.clear();
@@ -294,11 +303,13 @@ public:
             printf("%d:", generation);  // debug
             barycenters.clear();
             for (int i = 0; i < k; i++) {
-                float smallest_error = error_metric(cur_partition[i][0], i);
+                float smallest_error = error_metric(
+                    cloud->points[cur_partition[i][0]], proxies[i]);
                 int smallest_error_index = 0;
                 total_error_new += smallest_error;
                 for (int j = 1; j < cur_partition[i].size(); j++) {
-                    float cur_error = error_metric(cur_partition[i][j], i);
+                    float cur_error = error_metric(
+                        cloud->points[cur_partition[i][j]], proxies[i]);
                     total_error_new += cur_error;
                     if (cur_error < smallest_error) {
                         smallest_error = cur_error;
