@@ -1,13 +1,17 @@
+#define PCL_NO_PRECOMPILE
 #include <pcl/console/parse.h>
 #include <pcl/console/print.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/features/normal_3d.h>
 #include <mesh_sampling.h>
+#include <random>
+#include <queue>
+#include <vsa.hpp>
 
 using namespace std;
 using namespace pcl;
 const int default_number_samples = 100000;
-const float default_leaf_size = 0.01f;
+const float default_leaf_size = 0.001f;
 
 pcl::PointCloud<pcl::Normal>::Ptr get_normals(
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) {
@@ -45,13 +49,33 @@ int main(int argc, char** argv) {
     concatenateFields(*voxel_cloud, *normals, *pNormal);
     // pNormal = mesh_sampling_with_normal(filename, default_number_samples,
     //                                     default_leaf_size);
+
+    // clustering
+    VSA vsa;
+    vsa.setInputCloud(pNormal);
+    vsa.setMetricOption(2);
+    vsa.setEps(1);
+    vsa.setK(100);
+    auto res = vsa.compute();
+
+    std::default_random_engine generator;
+    std::uniform_int_distribution<int> color(0, 255);
+
+    int cnt = 0;
     visualization::PCLVisualizer viewer("VOXELIZED SAMPLES CLOUD");
-    visualization::PointCloudColorHandlerCustom<PointNormal> handler(
-        pNormal, 20, 200, 20);
-    // viewer.addPointCloud<pcl::PointNormal>(voxel_cloud);
-    viewer.addPointCloud(pNormal, handler, "r");
-    viewer.addPointCloudNormals<pcl::PointNormal>(pNormal, 10, 0.2f,
-                                                  "cloud_normals");
+    for (auto points : res) {
+        printf("%lu ", points.size());
+        PointCloud<PointNormal>::Ptr pointcloud_ptr(
+            new PointCloud<PointNormal>);
+        for (auto point : points) {
+            pointcloud_ptr->points.push_back(pNormal->points[point]);
+        }
+        visualization::PointCloudColorHandlerCustom<PointNormal> handler(
+            pointcloud_ptr, color(generator), color(generator),
+            color(generator));
+        viewer.addPointCloud(pointcloud_ptr, handler, string(cnt++, 'x'));
+    }
+    puts("");
     viewer.setBackgroundColor(0.05, 0.05, 0.05, 0);
     // viewer.addCoordinateSystem(1.0, "cloud", 0);
     viewer.spin();
