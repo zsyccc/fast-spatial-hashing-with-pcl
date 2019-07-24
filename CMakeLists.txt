@@ -13,10 +13,11 @@ if( CMAKE_BINARY_DIR MATCHES " " )
 	message( "Your Build Directory contains spaces. If you experience problems when compiling, this can be the cause." )
 endif()
 
-
+find_package(Eigen3)
 
 include_directories(
     ${PCL_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIR}
     .
 )
 
@@ -41,9 +42,7 @@ add_executable(fsh
     main.cpp
     mesh_sampling.h
     mesh_sampling.cpp
-    # voxelize.hpp
-    # voxelize.cpp
-    # point.hpp
+    vsa.hpp
 )
 
 target_link_libraries (fsh 
