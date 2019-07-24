@@ -6,12 +6,12 @@
 #include <mesh_sampling.h>
 #include <random>
 #include <queue>
-#include <vsa.hpp>
+#include <vsa.h>
 
 using namespace std;
 using namespace pcl;
 const int default_number_samples = 100000;
-const float default_leaf_size = 0.001f;
+const float default_leaf_size = 0.01f;
 
 pcl::PointCloud<pcl::Normal>::Ptr get_normals(
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) {
@@ -51,11 +51,11 @@ int main(int argc, char** argv) {
     //                                     default_leaf_size);
 
     // clustering
-    VSA vsa;
+    VSA<PointNormal> vsa;
     vsa.setInputCloud(pNormal);
     vsa.setMetricOption(2);
-    vsa.setEps(1);
-    vsa.setK(100);
+    vsa.setEps(0.01);
+    vsa.setK(6);
     auto res = vsa.compute();
 
     std::default_random_engine generator;
