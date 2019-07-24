@@ -5,7 +5,6 @@
 #include <pcl/features/normal_3d.h>
 #include <mesh_sampling.h>
 #include <random>
-#include <queue>
 #include <vsa.hpp>
 
 using namespace std;
