@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
 
     // clustering
     VSA vsa;
-    vsa.setInputCloud(pNormal);
+    vsa.setInputCloud<pcl::PointNormal>(pNormal);
     vsa.setMetricOption(2);
     vsa.setEps(0.01);
     vsa.setK(6);

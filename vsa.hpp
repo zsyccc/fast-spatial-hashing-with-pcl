@@ -1,3 +1,5 @@
+#pragma once
+
 #ifndef _VSA_HPP_
 #define _VSA_HPP_
 
@@ -53,8 +55,6 @@ public:
 
     bool metric2_proxy_normal(const std::vector<int>& region,
                               pcl::PointNormal& normal) {
-        // printf("region.size()=%lu \n", region.size());
-        // std::assert(region.size());
         Eigen::MatrixXf input(region.size(), 3);
         for (int i = 0; i < region.size(); i++) {
             for (int j = 0; j < 3; j++) {
@@ -82,10 +82,6 @@ public:
             Eigen::MatrixXf::Index realMax;
             eignevals_real.rowwise().sum().maxCoeff(&realMax);
             auto v = solver.eigenvectors().col(realMax).real();
-            // static int cnt = 0;
-            // while (cnt++ <= 10) {
-            //     std::cout << solver.eigenvectors().col(realMax) << std::endl;
-            // }
             normal.normal_x = v(0);
             normal.normal_y = v(1);
             normal.normal_z = v(2);
@@ -100,10 +96,7 @@ public:
                        point.z * proxy.normal_z -
                        (proxy.x * proxy.normal_x + proxy.y * proxy.normal_y +
                         proxy.z * proxy.normal_z);
-            float t2 = proxy.normal_x * proxy.normal_x +
-                       proxy.normal_y * proxy.normal_y +
-                       proxy.normal_z * proxy.normal_z;
-            return sqrt(t1 * t1 / t2);
+            return std::fabs(t1);
         } else if (metric_option == 2) {
             PointNormalT p;
             pcl::copyPoint(point, p);
@@ -134,11 +127,14 @@ public:
           eps(0.1),
           k(100) {}
 
-    void setInputCloud(const pcl::PointCloud<pcl::PointNormal>::Ptr in) {
+    template <typename PointT>
+    void setInputCloud(const typename pcl::PointCloud<PointT>::Ptr in) {
         pcl::copyPointCloud(*in, *cloud);
     }
 
-    void setMetricOption(int option) { this->metric_option = option; }
+    void setMetricOption(int metric_option) {
+        this->metric_option = metric_option;
+    }
 
     void setEps(float eps) { this->eps = eps; }
 
@@ -173,8 +169,79 @@ public:
         }
     }
 
+    void deleteProxy(const std::vector<std::vector<int>>& cur_partition,
+                     int& delete_region_idx, int& delete_point_idx) {
+        // deletion: merge 2 proxies
+        float smallest_merge_error = INFINITY;
+        int smallest_merge_error_index = -1;
+        for (int i = 0; i < k - 1; i++) {
+            std::vector<int> merging_region;
+            merging_region.reserve(cur_partition[i].size() +
+                                   cur_partition[i + 1].size());
+            std::copy(cur_partition[i].begin(), cur_partition[i].end(),
+                      back_inserter(merging_region));
+            std::copy(cur_partition[i + 1].begin(), cur_partition[i + 1].end(),
+                      back_inserter(merging_region));
+            Proxy merging_proxy;
+            proxy_fitting(merging_region, merging_proxy);
+            float merging_error = 0.0f;
+            float smallest = INFINITY;
+            float smallest_idx = -1;
+            for (auto it : merging_region) {
+                float t = error_metric(cloud->points[it], merging_proxy);
+                merging_error += t;
+                if (t < smallest) {
+                    smallest = t;
+                    smallest_idx = it;
+                }
+            }
+            if (merging_error < smallest_merge_error) {
+                smallest_merge_error = merging_error;
+                smallest_merge_error_index = i;
+                delete_point_idx = smallest_idx;
+            }
+        }
+        delete_region_idx = smallest_merge_error_index;
+    }
+
+    void insertProxy(const std::vector<std::vector<int>>& cur_partition,
+                     int& insert_region_idx, int& insert_point_idx1,
+                     int& insert_point_idx2) {
+        // insertion: devide a region into a new region and a point
+        float largest_error = -1.0f;
+        int largest_error_index = -1;
+        for (int i = 0; i < k; i++) {
+            float region_error = 0.0f;
+            float largest_point_error = 0.0f;
+            int largest_point_error_index = -1;
+            float smallest_point_error = INFINITY;
+            int smallest_point_error_index = -1;
+            for (int point_idx = 0; point_idx < cur_partition[i].size();
+                 point_idx++) {
+                float t = error_metric(cloud->points[point_idx], proxies[i]);
+                region_error += t;
+                if (t > largest_point_error) {
+                    largest_point_error = t;
+                    largest_point_error_index = point_idx;
+                }
+                if (t < smallest_point_error) {
+                    smallest_point_error = t;
+                    smallest_point_error_index = point_idx;
+                }
+            }
+            if (region_error > largest_error) {
+                largest_error = region_error;
+                insert_point_idx1 = largest_point_error_index;
+                insert_point_idx2 = smallest_point_error_index;
+            }
+        }
+        insert_region_idx = largest_error_index;
+    }
+
     std::vector<std::vector<int>> compute() {
-        const int knn_search_k = 10;
+        const int knn_search_k =
+            10;  // it is likely that knn_search_k is not large enough to go
+                 // through all the points
 
         proxies.resize(k);
         std::priority_queue<PQElement> point_priority_queue;
@@ -191,18 +258,9 @@ public:
         float total_error = 2 * eps;
         float total_error_new = 0.0f;
 
-        // while (total_error > 5e7) {
+        // while (generation < 10) {
         while (fabs(total_error_new - total_error) > eps) {
-            total_error = total_error_new;
-            total_error_new = 0.0f;
-
-            std::vector<std::vector<int>>(k).swap(cur_partition);
-            for (int it = 0; it < cloud->size(); it++) {
-                cloud->points[it].assigned = false;
-            }
-
-            // initialize for the very first partitioning
-            // pick k points at random and push them in 'barycenters'
+            // find barycenters--i.e.,seed points
             if (generation == 0) {
                 std::default_random_engine generator(std::time(0));
                 static std::uniform_int_distribution<int> randint(
@@ -219,6 +277,38 @@ public:
                     proxies[i] = (pcl::PointNormal)cloud->points[rand_int];
                 }
                 std::sort(barycenters.begin(), barycenters.end());
+            } else {
+                barycenters.clear();
+                for (int i = 0; i < k; i++) {
+                    float smallest_error = error_metric(
+                        cloud->points[cur_partition[i][0]], proxies[i]);
+                    int smallest_error_index = 0;
+                    for (int j = 1; j < cur_partition[i].size(); j++) {
+                        float cur_error = error_metric(
+                            cloud->points[cur_partition[i][j]], proxies[i]);
+                        if (cur_error < smallest_error) {
+                            smallest_error = cur_error;
+                            smallest_error_index = j;
+                        }
+                    }
+                    barycenters.push_back(
+                        cur_partition[i][smallest_error_index]);
+                }
+                // int delete_region_idx, delete_point_idx;
+                // deleteProxy(cur_partition, delete_region_idx,
+                // delete_point_idx); barycenters[delete_region_idx] =
+                // delete_point_idx; int insert_region_idx, insert_point_idx1,
+                // insert_point_idx2; insertProxy(cur_partition,
+                // insert_region_idx, insert_point_idx1,
+                //             insert_point_idx2);
+                // barycenters[delete_region_idx + 1] = insert_point_idx1;
+                // barycenters[insert_region_idx] = insert_point_idx2;
+                // std::sort(barycenters.begin(), barycenters.end());  //
+            }
+
+            std::vector<std::vector<int>>(k).swap(cur_partition);
+            for (int it = 0; it < cloud->size(); it++) {
+                cloud->points[it].assigned = false;
             }
 
             // flooding
@@ -231,7 +321,6 @@ public:
                 if ((debug_t = kdtree.nearestKSearch(
                          cloud->points[barycenters[i]], knn_search_k,
                          pointIdxNKNSearch, pointNKNSquaredDistance)) > 0) {
-                    // if (debug_t != 10) printf("%d ", debug_t);
                     for (auto nearest_point : pointIdxNKNSearch) {
                         if (nearest_point != barycenters[i]) {
                             point_priority_queue.push(
@@ -264,32 +353,6 @@ public:
                 }
             }
 
-            // merge 2 proxies and insert 1 proxy for each iteration
-            // float smallest_merge_error = INFINITY;
-            // int smallest_merge_error_index = -1;
-            // for (int i = 0; i < k - 1; i++) {
-            //     std::vector<int> merging_region;
-            //     merging_region.reserve(cur_partition[i].size() +
-            //                            cur_partition[i + 1].size());
-            //     std::copy(cur_partition[i].begin(), cur_partition[i].end(),
-            //               back_inserter(merging_region));
-            //     std::copy(cur_partition[i + 1].begin(),
-            //               cur_partition[i + 1].end(),
-            //               back_inserter(merging_region));
-            //     Proxy merging_proxy;
-            //     proxy_fitting(merging_region, merging_proxy);
-            //     float merging_error = 0.0f;
-            //     for (auto it : merging_region) {
-            //         merging_error +=
-            //             error_metric(cloud->points[it], merging_proxy);
-            //     }
-            //     if (merging_error < smallest_merge_error) {
-            //         smallest_merge_error = merging_error;
-            //         smallest_merge_error_index = i;
-            //     }
-            // }
-            // insertion...
-
             // proxy fitting
             proxies.clear();
             for (int i = 0; i < k; i++) {
@@ -298,31 +361,20 @@ public:
                 proxies.push_back(proxy);
             }
 
-            // find the triangle T_i of S that is most similar to its
-            // respective fitting proxy
-            printf("%d:", generation);  // debug
-            barycenters.clear();
+            // calculate total distortion error
+            total_error = total_error_new;
+            total_error_new = 0.0f;
             for (int i = 0; i < k; i++) {
-                float smallest_error = error_metric(
-                    cloud->points[cur_partition[i][0]], proxies[i]);
-                int smallest_error_index = 0;
-                total_error_new += smallest_error;
-                for (int j = 1; j < cur_partition[i].size(); j++) {
-                    float cur_error = error_metric(
+                for (int j = 0; j < cur_partition[i].size(); j++) {
+                    total_error_new += error_metric(
                         cloud->points[cur_partition[i][j]], proxies[i]);
-                    total_error_new += cur_error;
-                    if (cur_error < smallest_error) {
-                        smallest_error = cur_error;
-                        smallest_error_index = j;
-                    }
                 }
-                barycenters.push_back(cur_partition[i][smallest_error_index]);
             }
-            printf("%f\n", total_error_new);  // debug
+
+            printf("%d: %f\n", generation, total_error_new);  // debug
             generation++;
         }
-        printf("%f %f %f\n", total_error_new, total_error, eps);
-        int cnt_assigned = 0;
+        int cnt_assigned = 0;  // debug
         int cnt_not_assigned = 0;
         for (int i = 0; i < cloud->size(); i++) {
             if (cloud->points[i].assigned) {
