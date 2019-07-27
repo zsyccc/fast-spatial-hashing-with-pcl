@@ -3,9 +3,11 @@
 #include <pcl/console/print.h>
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/features/normal_3d.h>
-#include <mesh_sampling.h>
 #include <random>
+#include <iostream>
+#include <mesh_sampling.h>
 #include <vsa.hpp>
+#include <psh.hpp>
 
 using namespace std;
 using namespace pcl;
@@ -50,35 +52,45 @@ int main(int argc, char** argv) {
     //                                     default_leaf_size);
 
     // clustering
-    VSA vsa;
-    vsa.setInputCloud<pcl::PointNormal>(pNormal);
-    vsa.setMetricOption(2);
-    vsa.setEps(0.01);
-    vsa.setK(6);
-    auto res = vsa.compute();
+    // VSA vsa;
+    // vsa.setInputCloud<pcl::PointNormal>(pNormal);
+    // vsa.setMetricOption(2);
+    // vsa.setEps(0.01);
+    // vsa.setK(6);
+    // auto res = vsa.compute();
 
-    std::default_random_engine generator;
-    std::uniform_int_distribution<int> color(0, 255);
+    // std::default_random_engine generator;
+    // std::uniform_int_distribution<int> color(0, 255);
 
-    int cnt = 0;
-    visualization::PCLVisualizer viewer("VOXELIZED SAMPLES CLOUD");
-    for (auto points : res) {
-        printf("%lu ", points.size());
-        PointCloud<PointNormal>::Ptr pointcloud_ptr(
-            new PointCloud<PointNormal>);
-        for (auto point : points) {
-            pointcloud_ptr->points.push_back(pNormal->points[point]);
-        }
-        visualization::PointCloudColorHandlerCustom<PointNormal> handler(
-            pointcloud_ptr, color(generator), color(generator),
-            color(generator));
-        viewer.addPointCloud(pointcloud_ptr, handler, string(cnt++, 'x'));
+    // int cnt = 0;
+    // visualization::PCLVisualizer viewer("VOXELIZED SAMPLES CLOUD");
+    // for (auto points : res) {
+    //     printf("%lu ", points.size());
+    //     PointCloud<PointNormal>::Ptr pointcloud_ptr(
+    //         new PointCloud<PointNormal>);
+    //     for (auto point : points) {
+    //         pointcloud_ptr->points.push_back(pNormal->points[point]);
+    //     }
+    //     visualization::PointCloudColorHandlerCustom<PointNormal> handler(
+    //         pointcloud_ptr, color(generator), color(generator),
+    //         color(generator));
+    //     viewer.addPointCloud(pointcloud_ptr, handler, string(cnt++, 'x'));
+    // }
+    // puts("");
+    // viewer.setBackgroundColor(0.05, 0.05, 0.05, 0);
+    // // viewer.addCoordinateSystem(1.0, "cloud", 0);
+    // viewer.spin();
+    // printf("%d %d\n", (int)voxel_cloud->points.size(),
+    //        (int)normals->points.size());
+
+    using Psh = psh::psh<bool>;
+    using PshPointT = Psh::data_t;
+    pcl::PointCloud<PshPointT>::Ptr psh_cloud(new pcl::PointCloud<PshPointT>);
+    pcl::copyPointCloud(*pNormal, *psh_cloud);
+    for (auto& it : *psh_cloud) {
+        it.costomData = true;
     }
-    puts("");
-    viewer.setBackgroundColor(0.05, 0.05, 0.05, 0);
-    // viewer.addCoordinateSystem(1.0, "cloud", 0);
-    viewer.spin();
-    printf("%d %d\n", (int)voxel_cloud->points.size(),
-           (int)normals->points.size());
+    Psh map(psh_cloud);
+
     return 0;
 }
