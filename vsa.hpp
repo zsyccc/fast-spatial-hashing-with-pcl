@@ -386,6 +386,8 @@ public:
         printf("%d %d\n", cnt_assigned, cnt_not_assigned);
         return cur_partition;
     }
+
+    const std::vector<Proxy>& getProxies() const { return proxies; }
 };
 
 #endif
