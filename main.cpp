@@ -12,7 +12,7 @@
 using namespace std;
 using namespace pcl;
 const int default_number_samples = 100000;
-const float default_leaf_size = 0.01f;
+const float default_leaf_size = 0.001f;
 
 pcl::PointCloud<pcl::Normal>::Ptr get_normals(
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) {

@@ -8,6 +8,7 @@
 #include <pcl/pcl_macros.h>
 #include <pcl/common/transforms.h>
 #include <pcl/visualization/pcl_visualizer.h>
+#include <Eigen/Geometry>
 #include <Eigen/Dense>
 #include <Eigen/SVD>
 #include <vsa.hpp>
@@ -34,13 +35,14 @@ namespace psh {
         using data_t = PointNormalTData<T>;
 
         psh(const typename pcl::PointCloud<data_t>::Ptr& in) {
-            int k = 6;
+            const int k = 100;
             VSA vsa;
             vsa.setInputCloud<data_t>(in);
             vsa.setMetricOption(2);
-            vsa.setEps(0.01);
+            vsa.setEps(1);
             vsa.setK(k);
             auto res = vsa.compute();
+            auto proxies = vsa.getProxies();
 
             std::vector<typename pcl::PointCloud<data_t>::Ptr>
                 transformed_clouds;
@@ -49,57 +51,71 @@ namespace psh {
                     new pcl::PointCloud<data_t>);
                 return ret;
             });
-            pcl::visualization::PCLVisualizer viewer("x");
-            for (int bucket = 0; bucket < res.size(); bucket++) {
-                auto points = res[bucket];
+
+            for (auto it : res) {
+                std::cout << it.size() << ' ';
+            }
+            std::cout << std::endl;
+
+            pcl::visualization::PCLVisualizer viewer("PSH_rotate");
+            pcl::visualization::PCLVisualizer viewer2("VSA");
+            std::default_random_engine generator;
+            std::uniform_int_distribution random(0, 255);
+            for (int bucket = 0; bucket < k; bucket++) {
                 typename pcl::PointCloud<data_t>::Ptr source(
                     new typename pcl::PointCloud<data_t>);
-                Eigen::MatrixXf X = Eigen::MatrixXf::Zero(3, points.size());
-                Eigen::MatrixXf N(3, points.size());
-                for (int i = 0; i < points.size(); i++) {
-                    X(2, i) = 1;
-                    const data_t& point = in->points[points[i]];
-                    for (int j = 0; j < 3; j++) {
-                        N(j, i) = point.normal[j];
-                    }
-                    source->points.push_back(point);
+                source->points.reserve(res[bucket].size());
+                for (const auto& point_idx : res[bucket]) {
+                    source->points.push_back(in->points[point_idx]);
                 }
-                Eigen::MatrixXf R =
-                    X * N.transpose() * (N * N.transpose()).inverse();
-                Eigen::JacobiSVD<Eigen::MatrixXf> svd(
-                    R, Eigen::ComputeFullU | Eigen::ComputeFullV);
-                Eigen::Matrix3f U = svd.matrixU().transpose();
-                // Eigen::Matrix3f U = R;
+                const auto& proxy = proxies[bucket];
+                Eigen::Vector3f N(proxy.normal_x, proxy.normal_y,
+                                  proxy.normal_z);
+                Eigen::Vector3f X(0.0f, 0.0f, 1.0f);
+                Eigen::Vector3f rotation_axis = N.cross(X);
+                float rotation_angle = std::acos(N.dot(X) / N.norm());
+                Eigen::AngleAxisf angle_axis(rotation_angle, rotation_axis);
+                Eigen::Matrix3f rotation_matrix = angle_axis.matrix();
                 Eigen::Matrix4f transform_matrix = Eigen::Matrix4f::Zero();
+                transform_matrix(3, 3) = 1;
+                transform_matrix(2, 3) = (float)bucket * 0.1f;
                 for (int i = 0; i < 3; i++) {
                     for (int j = 0; j < 3; j++) {
-                        if (std::fabs(U(i, j)) < 1e-5) U(i, j) = 0;
-                        transform_matrix(i, j) = U(i, j);
+                        if (std::fabs(rotation_matrix(i, j)) < 1e-5)
+                            rotation_matrix(i, j) = 0;
+                        transform_matrix(i, j) = rotation_matrix(i, j);
                     }
                 }
-                std::cout << " -- " << std::endl;
-                std::cout << X << "\n" << std::endl;
-                std::cout << N << "\n" << std::endl;
-                std::cout << R * N << "\n" << std::endl;
-                std::cout << U * N << "\n" << std::endl;
-                std::cout << R << "\n" << std::endl;
-                std::cout << U << "\n" << std::endl;
-                // std::cout << svd.singularValues() << "\n" << std::endl;
-                transform_matrix(3, 3) = 1;
-                // std::cout << transform_matrix << '\n' << std::endl;
+
+                // std::cout << " -- " << std::endl;
+                // std::cout << X << "\n" << std::endl;
+                // std::cout << N << "\n" << std::endl;
+                // std::cout << (rotation_matrix * N.normalized()).normalized()
+                //           << "\n"
+                //           << std::endl;
+                // std::cout << rotation_matrix << "\n" << std::endl;
+
+                int color_x = random(generator);
+                int color_y = random(generator);
+                int color_z = random(generator);
                 pcl::transformPointCloud(*source, *transformed_clouds[bucket],
                                          transform_matrix);
                 pcl::visualization::PointCloudColorHandlerCustom<data_t>
-                    handler(transformed_clouds[bucket], 240, 20, 20);
+                    handler(transformed_clouds[bucket], color_x, color_y,
+                            color_z);
                 viewer.addPointCloud(transformed_clouds[bucket], handler,
                                      std::string('c', bucket));
+                // pcl::visualization::PointCloudColorHandlerCustom<data_t>
+                //     handler2(source, 240, 240, 240);
+                // viewer.addPointCloud(source, handler2,
+                //                      std::string('x', bucket));
                 pcl::visualization::PointCloudColorHandlerCustom<data_t>
-                    handler2(source, 240, 240, 240);
-                viewer.addPointCloud(source, handler2,
-                                     std::string('x', bucket));
-                // viewer.addCoordinateSystem(1.0, "cloud");
+                    handler3(source, color_x, color_y, color_z);
+                viewer2.addPointCloud(source, handler3,
+                                      std::string('d', bucket));
             }
             viewer.spin();
+            viewer2.spin();
         }
     };
 }  // namespace psh
