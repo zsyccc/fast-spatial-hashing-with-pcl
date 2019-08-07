@@ -42,7 +42,7 @@ add_executable(fsh
     mesh_sampling.h
     mesh_sampling.cpp
     vsa.hpp
-)
+        point.hpp util.hpp)
 
 target_link_libraries (fsh 
     ${PCL_LIBRARIES}

@@ -1,0 +1,199 @@
+#pragma once
+
+#ifndef FSH_POINT_HPP
+#define FSH_POINT_HPP
+
+#include <iostream>
+
+namespace psh {
+
+    template<uint d, class Scalar>
+    struct point_data {
+        union {
+            Scalar data[d]{0};
+            struct {
+                Scalar x;
+                Scalar y;
+                Scalar z;
+            };
+        };
+
+        constexpr Scalar operator[](uint i) const { return data[i]; }
+
+        Scalar &operator[](uint i) { return data[i]; }
+    };
+
+    template<class Scalar>
+    struct point_data<1, Scalar> {
+        union {
+            Scalar data[1]{0};
+            struct {
+                Scalar x;
+            };
+        };
+
+        constexpr Scalar operator[](uint i) const { return data[i]; }
+
+        Scalar &operator[](uint i) { return data[i]; }
+    };
+
+    template<class Scalar>
+    struct point_data<2, Scalar> {
+        union {
+            Scalar data[2]{0};
+            struct {
+                Scalar x;
+                Scalar y;
+            };
+        };
+
+        constexpr Scalar operator[](uint i) const { return data[i]; }
+
+        Scalar &operator[](uint i) { return data[i]; }
+    };
+
+    template<class Scalar>
+    struct point_data<3, Scalar> {
+        union {
+            Scalar data[3]{0};
+            struct {
+                Scalar x;
+                Scalar y;
+                Scalar z;
+            };
+        };
+
+        constexpr Scalar operator[](uint i) const { return data[i]; }
+
+        Scalar &operator[](uint i) { return data[i]; }
+    };
+
+    template<uint d, class Scalar>
+    struct point {
+        point_data<d, Scalar> data;
+
+        template<class F>
+        explicit operator point<d, F>() const {
+            point<d, F> output;
+            for (uint i = 0; i < d; i++) {
+                output[i] = F(data[i]);
+            }
+            return output;
+        }
+
+        constexpr Scalar operator[](uint i) const { return data[i]; }
+
+        Scalar &operator[](uint i) { return data[i]; }
+
+        // returns {0, 1, 2..., d}
+        static constexpr point increasing_linear() {
+            point output;
+            for (uint i = 1; i < d; i++) {
+                output[i] = i;
+            }
+            return output;
+        }
+
+        // returns {k, k * k, k * k * k..., k^(d+1)}
+        static constexpr point increasing_pow(Scalar k) {
+            point output;
+            output[0] = k;
+            for (uint i = 1; i < d; i++) {
+                output[i] = output[i - 1] * k;
+            }
+            return output;
+        }
+
+        // returns {k, k, k...}
+        static constexpr point repeating(Scalar k) {
+            point output;
+            for (uint i = 0; i < d; i++) {
+                output[i] = k;
+            }
+            return output;
+        }
+
+        template<class F>
+        friend point<d, F> operator*(const point &p, F other) {
+            point<d, F> output;
+            for (uint i = 0; i < d; i++) output[i] = F(p[i]) * other;
+            return output;
+        }
+
+        friend uint operator*(const point &lhs, const point &rhs) {
+            uint output = 0;
+            for (uint i = 0; i < d; i++) output += lhs[i] * rhs[i];
+            return output;
+        }
+
+        template<class F>
+        friend point<d, F> operator+(const point &p, F other) {
+            point<d, F> output;
+            for (uint i = 0; i < d; i++) output[i] += F(p[i]) + other;
+            return output;
+        }
+
+        friend point operator+(const point &lhs, const point &rhs) {
+            point output = lhs;
+            for (uint i = 0; i < d; i++) output[i] += rhs[i];
+            return output;
+        }
+
+        template<class F>
+        friend point<d, F> operator+(const point<d, Scalar> &lhs,
+                                     const point<d, F> &rhs) {
+            point<d, F> output = rhs;
+            for (uint i = 0; i < d; i++) output[i] += lhs[i];
+            return output;
+        }
+
+        template<class F>
+        friend point<d, F> operator-(const point &p, F other) {
+            point<d, F> output = p;
+            for (uint i = 0; i < d; i++) output[i] -= other;
+            return output;
+        }
+
+        friend bool operator==(const point &lhs, const point &rhs) {
+            for (uint i = 0; i < d; i++)
+                if (lhs[i] != rhs[i]) return false;
+            return true;
+        }
+
+        friend bool operator!=(const point &lhs, const point &rhs) {
+            return !(lhs == rhs);
+        }
+
+        friend std::ostream &operator<<(std::ostream &stream, const point &p) {
+            stream << "(";
+            for (uint i = 0; i < d; i++) {
+                stream << +p.data[i];
+                if (i != d - 1) stream << ", ";
+            }
+            stream << ")";
+            return stream;
+        }
+    };
+}
+
+namespace std {
+    template<uint d, class Scalar>
+    struct hash<psh::point<d, Scalar>> {
+        size_t operator()(const psh::point<d, Scalar> &p) const {
+            // Compute individual hash values for first,
+            // second and third and combine them using XOR
+            // and bit shifting:
+
+            size_t output = hash<Scalar>()(p[0]);
+            for (uint i = 1; i < d; i++) {
+                output ^= hash<Scalar>()(p[i]);
+            }
+            return output;
+        }
+    };
+
+}  // namespace std
+
+
+
+#endif //FSH_POINT_HPP
