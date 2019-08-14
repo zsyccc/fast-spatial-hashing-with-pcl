@@ -45,20 +45,49 @@ int main(int argc, char **argv) {
 //            point.data[i] = (float) std::floor(point.data[i] * zoom) / zoom;
 //        }
 //    }
-//    std::ofstream fout("out.txt", ios::out);
+
     map::data_function get_data_func = [&](size_t i) -> map::data_t {
         pcl::PointXYZ point;
         pcl::copyPoint(voxel_cloud->points[i], point);
         for (int di = 0; di < 3; di++) {
             point.data[di] = (float) std::floor(point.data[di] * zoom) / zoom;
         }
-//        fout << point << std::endl;
         return map::data_t(point, true);
     };
-//    for (size_t i = 0; i < voxel_cloud->points.size(); i++) get_data_func(i);
-//    fout.close();
 
     map s(get_data_func, voxel_cloud->points.size(), default_leaf_size);
 
+
+    std::cout << "exhaustive test" << std::endl;
+    for (const auto &p:*voxel_cloud) {
+        try {
+            pcl::PointXYZ point;
+            pcl::copyPoint(p, point);
+            s.get(point);
+        } catch (const std::out_of_range &e) {
+//            std::cout << "didn't find existing element!" << std::endl;
+            std::cout << e.what() << std::endl;
+        }
+    }
+    std::cout << "done" << std::endl;
+//    point p = psh::index_to_point<d>(i, width, DataInt(-1));
+//    pixel exists = data_b.count(i);
+//    try {
+//        s.get(p);
+//        if (!exists) {
+//            std::cout << "found non-existing element!" << std::endl;
+//            std::cout << p << std::endl;
+//        }
+//    } catch (const std::out_of_range &e) {
+//        if (exists) {
+//            std::cout << "didn't find existing element!" << std::endl;
+//            std::cout << p << std::endl;
+//        }
+//    }
+//}
+//
+//);
+//std::cout << "finished!" <<
+//std::endl;
     return 0;
 }

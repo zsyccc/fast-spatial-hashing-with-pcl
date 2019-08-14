@@ -9,6 +9,7 @@
 #include <string>
 #include <functional>
 #include <set>
+#include <map>
 #include <unordered_set>
 #include <cstring>
 #include <pcl/point_types.h>
@@ -53,6 +54,8 @@ namespace psh {
         // model leaf size
         float precision;
 
+        std::unordered_map<point<layer_dimension, PosInt>, IndexInt> mapping;
+
         map(IndexInt n, float precision);
 
     public:
@@ -85,6 +88,23 @@ namespace psh {
 
         map(const data_function &data, IndexInt n, float precision);
 
+        T &get(const pcl::PointXYZ &p) {
+            float zoom = 1.0f / precision;
+
+            point<layer_dimension, PosInt> p2;
+            for (uint i = 0; i < layer_dimension; i++) {
+                p2[i] = std::floor(p.data[i] * zoom);
+            }
+            if (!mapping.count(p2)) throw std::out_of_range("Element not found in map in fsh get");
+            IndexInt bucket = mapping[p2];
+
+            return hash_buckets[bucket].get(p);
+        }
+
+        const T &get(const pcl::PointXYZ &p) const { return get(p); }
+
+    private:
+
         static Eigen::Matrix4f get_rotation_matrix(const Eigen::Vector3f &before, const Eigen::Vector3f &after) {
             Eigen::Vector3f rotation_axis = before.cross(after);
             float rotation_angle = std::acos(before.dot(after) / before.norm());
@@ -109,6 +129,20 @@ namespace psh {
             viewer.spin();
         }
 
+        void save_mapping(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud,
+                          const std::vector<std::vector<int>> &partition) {
+            float zoom = 1.0f / precision;
+            for (IndexInt bucket = 0; bucket < part_num; bucket++) {
+                for (auto index : partition[bucket]) {
+                    point<layer_dimension, PosInt> p;
+                    for (uint i = 0; i < layer_dimension; i++) {
+                        p[i] = std::floor(cloud->points[index].data[i] * zoom);
+                    }
+                    mapping[p] = bucket;
+                }
+            }
+        }
+
         void init_map(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud, const content_function &content) {
             // show_cloud(cloud);
             const int k = 6;
@@ -120,6 +154,7 @@ namespace psh {
             vsa.setK(k);
             auto res = vsa.compute();
             auto proxies = vsa.getProxies();
+            save_mapping(cloud, res);
 
 //#ifdef PSH_DEBUG
             // debug: print the size of each bucket
@@ -148,7 +183,7 @@ namespace psh {
                 Eigen::Vector3f N(proxy.normal_x, proxy.normal_y, proxy.normal_z);
                 Eigen::Vector3f X(0.0f, 0.0f, 1.0f);
                 Eigen::Matrix4f transform_matrix = get_rotation_matrix(N, X);
-                transform_matrix(2, 3) = 0.1f * bucket;
+//                transform_matrix(2, 3) = 0.1f * static_cast<float>(bucket);
                 pcl::transformPointCloud(*source, *transformed_clouds[bucket], transform_matrix);
             }
             Eigen::Vector3f v = Eigen::Vector3f::Zero();
@@ -259,8 +294,7 @@ namespace psh {
                 if (i == 2) start = 0.0f;
                 search_zoom_factor_func(start, res, step, (uint) 1 << i);
             }
-            std::cout << layer.zoom_factor[0] << ' ' << layer.zoom_factor[1] << ' ' << layer.zoom_factor[2]
-                      << std::endl;
+
             convert_points(layer, cloud, out);
             static int cnt = 0;
             cnt++;
@@ -280,12 +314,12 @@ namespace psh {
             auto scale_matrix = layer.get_scale_matrix();
             auto transformation_matrix = scale_matrix * translation_matrix;
 
-            assert(layer.n == cloud->points.size());
-            std::vector<decltype(layer_map::data_t::location)>(layer.n).swap(out);
+            assert(layer.get_n() == cloud->points.size());
+            std::vector<decltype(layer_map::data_t::location)>(cloud->points.size()).swap(out);
 
             pcl::PointCloud<pcl::PointNormal>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointNormal>);
             pcl::transformPointCloud(*cloud, *transformed_cloud, transformation_matrix);
-            for (IndexInt i = 0; i < layer.n; i++) {
+            for (IndexInt i = 0; i < cloud->points.size(); i++) {
                 const auto &point = transformed_cloud->points[i];
                 for (uint j = 0; j < d; j++) {
                     out[i][j] = (PosInt) std::floor(point.data[j]);
@@ -325,7 +359,7 @@ namespace psh {
 
     private:
         class layer_map {
-        public:
+        private:
             static const uint d{layer_dimension};
 
             class entry;
@@ -363,6 +397,26 @@ namespace psh {
             float zoom_factor[d];
 
             VSA::Proxy proxy;
+
+        public:
+            [[nodiscard]] IndexInt get_n() const { return n; }
+
+            T &get(const pcl::PointXYZ &p) {
+                auto rotation_matrix = get_rotation_matrix();
+                auto translation_matrix = get_translation_matrix();
+                auto scale_matrix = get_scale_matrix();
+                auto transformation_matrix = scale_matrix * translation_matrix * rotation_matrix;
+                Eigen::Vector4f in_point(p.x, p.y, p.z, 1.0f);
+                Eigen::Vector4f transformed_point = translation_matrix * in_point;
+                point<d, PosInt> res;
+                for (uint i = 0; i < d; i++) {
+                    res[i] = std::floor(transformed_point[i]);
+                }
+                return get(res);
+            }
+
+            const T &get(const pcl::PointXYZ &p) const { return get(p); }
+
 
             struct data_t {
                 point<d, PosInt> location;
@@ -461,8 +515,21 @@ namespace psh {
                 std::cout << "=======Failed for " << fail << " times=========" << std::endl;
             }
 
+        private:
 
-//        private:
+            T &get(const point<d, PosInt> &p) {
+                // find where the element would be located
+                auto i = point_to_index(h(p), m_bar, m);
+                // but also check that they are equal (have the same positional
+                // hash)
+                if (H[i].equals(p, M2))
+                    return H[i].contents;
+                else
+                    throw std::out_of_range("Element not found in map");
+            }
+
+            const T &get(const point<d, PosInt> &p) const { return get(p); }
+
             // internal data structures
 
             // a bucket is simply a vector<data_t> which is then sorted
@@ -576,8 +643,7 @@ namespace psh {
                     // if a bucket is empty, then the rest will also be empty
                     if (buckets[i].size() == 0) break;
                     if (i % (buckets.size() / 10) == 0)
-                        std::cout << (100 * i) / buckets.size() << "% done"
-                                  << std::endl;
+                        std::cout << (100 * i) / buckets.size() << "% done" << std::endl;
 
                     // try to jiggle the offsets until an injective mapping is found
                     if (!jiggle_offsets(H_hat, H_b_hat, phi_hat, buckets[i], m_dist)) {
@@ -597,7 +663,7 @@ namespace psh {
             // certain values for m_bar and r_bar are bad, empirically found to be
             // if: m_bar is coprime with r_bar <==> gcd(m_bar, r_bar) != 1 <==>
             // m_bar % r_bar ∈ {1, r_bar - 1} creds to Euclid
-            bool bad_m_r() const {
+            [[nodiscard]] bool bad_m_r() const {
                 auto m_mod_r = m_bar % r_bar;
                 return m_mod_r == 1 || m_mod_r == r_bar - 1;
             }
