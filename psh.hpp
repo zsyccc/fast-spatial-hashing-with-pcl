@@ -28,7 +28,7 @@
 
 namespace psh {
 
-    const uint layer_dimension = 2;
+    const uint layer_dimension = 3;
 
     template<class T>
     class map {
@@ -222,7 +222,7 @@ namespace psh {
             layer.init(_n, _u_bar, min_bound, precision, proxy);
 
             auto ok_func = [](const std::vector<decltype(layer_map::data_t::location)> &data) -> bool {
-                std::set<decltype(layer_map::data_t::location)> set;
+                std::unordered_set<decltype(layer_map::data_t::location)> set;
                 bool ok = true;
                 for (const auto &point:data) {
                     if (set.count(point)) {
@@ -233,24 +233,49 @@ namespace psh {
                 }
                 return ok;
             };
-            float zoom_factor_L = 0.5f;
-            float zoom_factor_R = 100.0f;
-            float step = 0.1f;
-            while (zoom_factor_R - zoom_factor_L >= step) {
-                float zoom_factor_M = zoom_factor_L + (zoom_factor_R - zoom_factor_L) / 2.0f;
-                layer.setZoom(zoom_factor_M, zoom_factor_M);
-                convert_points(layer, cloud, out);
-                if (ok_func(out)) {
-                    zoom_factor_L = zoom_factor_M + step;
-                } else {
-                    zoom_factor_R = zoom_factor_M - step;
+            auto search_zoom_factor_func = [&](float L, float R, float step, uint mask) -> float {
+                float zoom_factor[d];
+                while (R - L >= step) {
+                    float M = L + (R - L) / 2.0f;
+                    for (uint i = 0; i < d; i++) {
+                        if (mask & ((uint) 1 << i)) {
+                            zoom_factor[i] = M;
+                        }
+                    }
+                    layer.setZoom(zoom_factor, mask);
+                    convert_points(layer, cloud, out);
+                    if (ok_func(out)) {
+                        R = M - step;
+                    } else {
+                        L = M + step;
+                    }
                 }
+                for (uint i = 0; i < d; i++) {
+                    if (mask & ((uint) 1 << i)) {
+                        zoom_factor[i] = R;
+                    }
+                }
+                layer.setZoom(zoom_factor, mask);
+                assert(R < 5.0f);
+                return R;
+            };
+
+            float step = 0.01f;
+            float res = search_zoom_factor_func(0.5f, 5.0f, step, 7);
+            for (uint i = 0; i < 3; i++) {
+                float start = 0.5f;
+                if (i == 2) start = 0.0f;
+                search_zoom_factor_func(start, res, step, (uint) 1 << i);
             }
-            layer.setZoom(zoom_factor_L, zoom_factor_L);
-            VALUE(zoom_factor_L);
-            std::ofstream fout("out.txt");
+            std::cout << layer.zoom_factor[0] << ' ' << layer.zoom_factor[1] << ' ' << layer.zoom_factor[2]
+                      << std::endl;
+            convert_points(layer, cloud, out);
+            static int cnt = 0;
+            cnt++;
+            char filename[10];
+            sprintf(filename, "out%d.txt", cnt);
+            std::ofstream fout(filename);
             for (IndexInt i = 0; i < _n; i++) {
-                fout << cloud->points[i] << std::endl;
                 fout << out[i] << std::endl;
             }
             fout.close();
@@ -262,9 +287,6 @@ namespace psh {
             auto translation_matrix = layer.get_translation_matrix();
             auto scale_matrix = layer.get_scale_matrix();
             auto transformation_matrix = scale_matrix * translation_matrix;
-//            VALUE_MATRIX(translation_matrix);
-//            VALUE_MATRIX(scale_matrix);
-//            VALUE_MATRIX(transformation_matrix);
 
             assert(layer.n == cloud->points.size());
             std::vector<decltype(layer_map::data_t::location)>(layer.n).swap(out);
@@ -375,7 +397,7 @@ namespace psh {
                 this->r = std::pow(r_bar, d);
             }
 
-            void init(IndexInt _n, PosInt _u_bar, float _offset[d], float _precision, const VSA::Proxy &_proxy) {
+            void init(IndexInt _n, PosInt _u_bar, const float _offset[d], float _precision, const VSA::Proxy &_proxy) {
                 this->n = _n;
                 this->m_bar = std::ceil(std::pow(n, 1.0f / d));
                 this->m = std::pow(m_bar, d);
@@ -387,9 +409,19 @@ namespace psh {
                 this->proxy = _proxy;
             }
 
-            void setZoom(float x, float y) {
+            void setZoom(float x, float y, float z) {
                 zoom_factor[0] = x;
                 zoom_factor[1] = y;
+                zoom_factor[2] = z;
+            }
+
+            void setZoom(const float _zoom_factor[d], uint mask) {
+//                std::memcpy(this->zoom_factor, _zoom_factor, sizeof(this->zoom_factor));
+                for (uint i = 0; i < d; i++) {
+                    if (mask & ((uint) 1 << i)) {
+                        zoom_factor[i] = _zoom_factor[i];
+                    }
+                }
             }
 
             [[nodiscard]] Eigen::Matrix4f get_rotation_matrix() const {
@@ -400,8 +432,9 @@ namespace psh {
 
             [[nodiscard]] Eigen::Matrix4f get_translation_matrix() const {
                 Eigen::Matrix4f ret = Eigen::Matrix4f::Identity();
-                ret(0, 3) = -offset[0];
-                ret(1, 3) = -offset[1];
+                for (uint i = 0; i < d; i++) {
+                    ret(i, 3) = -offset[i];
+                }
                 return ret;
             }
 
