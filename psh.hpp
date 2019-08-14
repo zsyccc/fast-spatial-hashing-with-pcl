@@ -8,6 +8,8 @@
 #include <cmath>
 #include <string>
 #include <functional>
+#include <set>
+#include <unordered_set>
 #include <cstring>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
@@ -196,88 +198,76 @@ namespace psh {
                 layer_map &layer,
                 const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud,
                 const VSA::Proxy &proxy,
-                std::vector<typename layer_map::data_t> &out
+                std::vector<decltype(layer_map::data_t::location)> &out
         ) const {
             const uint d = layer_dimension;
-//            IndexInt _n = cloud->points.size();
-//            float min_bound[d];
-//            float max_bound[d];
-//            for (uint i = 0; i < d; i++) {
-//                min_bound[i] = INFINITY;
-//                max_bound[i] = -INFINITY;
-//            }
-//            for (const auto &point:*cloud) {
-//                for (uint i = 0; i < d; i++) {
-//                    min_bound[i] = std::min(point.data[i], min_bound[i]);
-//                    max_bound[i] = std::max(point.data[i], max_bound[i]);
-//                }
-//            }
-//            float width = 0;
-//            for (uint i = 0; i < d; i++) {
-//                width = std::max(width, max_bound[i] - min_bound[i]);
-//            }
-//            PosInt _u_bar = std::ceil(width / precision);
-//            layer.init(_n, _u_bar, min_bound, precision, proxy);
             IndexInt _n = cloud->points.size();
+            float min_bound[d];
+            float max_bound[d];
+            for (uint i = 0; i < d; i++) {
+                min_bound[i] = INFINITY;
+                max_bound[i] = -INFINITY;
+            }
+            for (const auto &point:*cloud) {
+                for (uint i = 0; i < d; i++) {
+                    min_bound[i] = std::min(point.data[i], min_bound[i]);
+                    max_bound[i] = std::max(point.data[i], max_bound[i]);
+                }
+            }
+            float width = 0;
+            for (uint i = 0; i < d; i++) {
+                width = std::max(width, max_bound[i] - min_bound[i]);
+            }
+            PosInt _u_bar = std::ceil(width / precision);
+            layer.init(_n, _u_bar, min_bound, precision, proxy);
 
-            PosInt zoom = std::round(1.0f / precision);
-            VALUE(zoom);
-            std::vector<typename layer_map::data_t>(_n).swap(out);
-            std::vector<point<d, LL>> temp(_n);
-            for (IndexInt i = 0; i < _n; i++) {
-                for (uint j = 0; j < d; j++) {
-                    temp[i][j] = std::round(cloud->points[i].data[j] * zoom);
+            auto ok_func = [](const std::vector<decltype(layer_map::data_t::location)> &data) -> bool {
+                std::set<decltype(layer_map::data_t::location)> set;
+                bool ok = true;
+                for (const auto &point:data) {
+                    if (set.count(point)) {
+                        ok = false;
+                        break;
+                    }
+                    set.insert(point);
+                }
+                return ok;
+            };
+            float zoom_factor_L = 0.5f;
+            float zoom_factor_R = 100.0f;
+            float step = 0.1f;
+            while (zoom_factor_R - zoom_factor_L >= step) {
+                float zoom_factor_M = zoom_factor_L + (zoom_factor_R - zoom_factor_L) / 2.0f;
+                layer.setZoom(zoom_factor_M, zoom_factor_M);
+                convert_points(layer, cloud, out);
+                if (ok_func(out)) {
+                    zoom_factor_L = zoom_factor_M + step;
+                } else {
+                    zoom_factor_R = zoom_factor_M - step;
                 }
             }
-            LL minbound[d];
-            LL maxbound[d];
-            for (uint i = 0; i < d; i++) {
-                minbound[i] = INT64_MAX;
-                maxbound[i] = INT64_MIN;
-            }
-            for (IndexInt i = 0; i < _n; i++) {
-                for (uint j = 0; j < d; j++) {
-                    minbound[j] = std::min(minbound[j], temp[i][j]);
-                    maxbound[j] = std::max(maxbound[j], temp[i][j]);
-                }
-            }
-            for (IndexInt i = 0; i < _n; i++) {
-                auto &point = out[i].location;
-                for (uint j = 0; j < d; j++) {
-                    point[j] = temp[i][j] - minbound[j];
-                }
-            }
-            LL width = 0;
-            for (uint i = 0; i < d; i++) {
-                width = std::max(width, maxbound[i] - minbound[i]);
-            }
-            PosInt _u_bar = width;
-            OffsetInt _offset[d];
-            for (uint i = 0; i < d; i++) {
-                _offset[i] = minbound[i];
-            }
+            layer.setZoom(zoom_factor_L, zoom_factor_L);
+            VALUE(zoom_factor_L);
             std::ofstream fout("out.txt");
             for (IndexInt i = 0; i < _n; i++) {
-                auto &point = out[i].location;
-                fout << "cloud: " << cloud->points[i].x << ' ' << cloud->points[i].y << std::endl;
-                fout << "transformed: " << point.data.x << ' ' << point.data.y << std::endl;
+                fout << cloud->points[i] << std::endl;
+                fout << out[i] << std::endl;
             }
             fout.close();
-            layer.init(_n, _u_bar, _offset, precision, proxy);
         }
 
-        void convert_points(const layer_map &layer, const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud,
-                            std::vector<point<layer_dimension, PosInt>> &out) {
+        static void convert_points(const layer_map &layer, const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud,
+                                   std::vector<decltype(layer_map::data_t::location)> &out) {
             const uint d = layer_dimension;
-            auto traslation_matrix = layer.get_translation_matrix();
+            auto translation_matrix = layer.get_translation_matrix();
             auto scale_matrix = layer.get_scale_matrix();
-            auto transformation_matrix = scale_matrix * traslation_matrix;
-            VALUE_MATRIX(traslation_matrix);
-            VALUE_MATRIX(scale_matrix);
-            VALUE_MATRIX(transformation_matrix);
+            auto transformation_matrix = scale_matrix * translation_matrix;
+//            VALUE_MATRIX(translation_matrix);
+//            VALUE_MATRIX(scale_matrix);
+//            VALUE_MATRIX(transformation_matrix);
 
             assert(layer.n == cloud->points.size());
-            std::vector<point<d, PosInt>>(layer.n).swap(out);
+            std::vector<decltype(layer_map::data_t::location)>(layer.n).swap(out);
 
             pcl::PointCloud<pcl::PointNormal>::Ptr transformed_cloud(new pcl::PointCloud<pcl::PointNormal>);
             pcl::transformPointCloud(*cloud, *transformed_cloud, transformation_matrix);
@@ -287,13 +277,6 @@ namespace psh {
                     out[i][j] = (PosInt) std::floor(point.data[j]);
                 }
             }
-            std::cout << "ok" << std::endl;
-            std::ofstream fout("out.txt");
-            for (IndexInt i = 0; i < layer.n; i++) {
-                fout << cloud->points[i].x << ' ' << cloud->points[i].y << std::endl;
-                fout << out[i].data.x << ' ' << out[i].data.y << std::endl;
-            }
-            fout.close();
         }
 
         void create_hash_buckets(
@@ -307,8 +290,9 @@ namespace psh {
                 bool create_succeed = false;
                 layer_map &layer = hash_buckets[i];
                 const pcl::PointCloud<pcl::PointNormal>::Ptr &layer_cloud = clouds[i];
-                std::vector<typename layer_map::data_t> scaled_cloud;
+                std::vector<decltype(layer_map::data_t::location)> scaled_cloud;
                 init_layer(layer, layer_cloud, proxies[i], scaled_cloud);
+
 
 
 //              TODO : create_hash
@@ -375,7 +359,9 @@ namespace psh {
 
             float precision;
 
-            OffsetInt offset[d];
+            float offset[d];
+
+            float zoom_factor[d];
 
             VSA::Proxy proxy;
 
@@ -389,7 +375,7 @@ namespace psh {
                 this->r = std::pow(r_bar, d);
             }
 
-            void init(IndexInt _n, PosInt _u_bar, OffsetInt _offset[d], float _precision, const VSA::Proxy &_proxy) {
+            void init(IndexInt _n, PosInt _u_bar, float _offset[d], float _precision, const VSA::Proxy &_proxy) {
                 this->n = _n;
                 this->m_bar = std::ceil(std::pow(n, 1.0f / d));
                 this->m = std::pow(m_bar, d);
@@ -399,6 +385,11 @@ namespace psh {
                 std::memcpy(this->offset, _offset, sizeof(this->offset));
                 this->precision = _precision;
                 this->proxy = _proxy;
+            }
+
+            void setZoom(float x, float y) {
+                zoom_factor[0] = x;
+                zoom_factor[1] = y;
             }
 
             [[nodiscard]] Eigen::Matrix4f get_rotation_matrix() const {
@@ -418,7 +409,7 @@ namespace psh {
                 Eigen::Matrix4f ret = Eigen::Matrix4f::Identity();
                 float zoom = 1.0f / precision;
                 for (uint i = 0; i < d; i++) {
-                    ret(i, i) = zoom;
+                    ret(i, i) = zoom * zoom_factor[i];
                 }
                 return ret;
             }

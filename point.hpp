@@ -154,6 +154,13 @@ namespace psh {
             return output;
         }
 
+        friend bool operator<(const point &lhs, const point &rhs) {
+            for (uint i = 0; i < d; i++) {
+                if (lhs[i] < rhs[i]) return true;
+            }
+            return false;
+        }
+
         friend bool operator==(const point &lhs, const point &rhs) {
             for (uint i = 0; i < d; i++)
                 if (lhs[i] != rhs[i]) return false;
