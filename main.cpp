@@ -10,7 +10,7 @@
 using namespace std;
 using namespace pcl;
 const int default_number_samples = 100000;
-const float default_leaf_size = 0.01f;
+float default_leaf_size;
 
 pcl::PointCloud<pcl::Normal>::Ptr get_normals(
     const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud) {
@@ -27,10 +27,12 @@ pcl::PointCloud<pcl::Normal>::Ptr get_normals(
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
+    if (argc < 6) {
         console::print_error("no enough param\n");
         return (-1);
     }
+
+    sscanf(argv[2],"%f",&default_leaf_size);
 
     std::vector<int> obj_file_indices =
         console::parse_file_extension_argument(argc, argv, ".obj");
@@ -49,12 +51,19 @@ int main(int argc, char** argv) {
     // pNormal = mesh_sampling_with_normal(filename, default_number_samples,
     //                                     default_leaf_size);
 
+    int metric;
+    float eps;
+    int k;
+    sscanf(argv[3],"%d",&metric);
+    sscanf(argv[4],"%f",&eps);
+    sscanf(argv[5],"%d",&k);
+    printf("leaf size=%f,metric=%d,eps=%f,k=%d\n",default_leaf_size,metric,eps,k);
     // clustering
     VSA vsa;
     vsa.setInputCloud(pNormal);
-    vsa.setMetricOption(2);
-    vsa.setEps(0.01);
-    vsa.setK(6);
+    vsa.setMetricOption(metric);
+    vsa.setEps(eps);
+    vsa.setK(k);
     auto res = vsa.compute();
 
     std::default_random_engine generator;
