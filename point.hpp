@@ -8,69 +8,8 @@
 namespace psh {
 
     template<uint d, class Scalar>
-    struct point_data {
-        union {
-            Scalar data[d]{0};
-            struct {
-                Scalar x;
-                Scalar y;
-                Scalar z;
-            };
-        };
-
-        constexpr Scalar operator[](uint i) const { return data[i]; }
-
-        Scalar &operator[](uint i) { return data[i]; }
-    };
-
-    template<class Scalar>
-    struct point_data<1, Scalar> {
-        union {
-            Scalar data[1]{0};
-            struct {
-                Scalar x;
-            };
-        };
-
-        constexpr Scalar operator[](uint i) const { return data[i]; }
-
-        Scalar &operator[](uint i) { return data[i]; }
-    };
-
-    template<class Scalar>
-    struct point_data<2, Scalar> {
-        union {
-            Scalar data[2]{0};
-            struct {
-                Scalar x;
-                Scalar y;
-            };
-        };
-
-        constexpr Scalar operator[](uint i) const { return data[i]; }
-
-        Scalar &operator[](uint i) { return data[i]; }
-    };
-
-    template<class Scalar>
-    struct point_data<3, Scalar> {
-        union {
-            Scalar data[3]{0};
-            struct {
-                Scalar x;
-                Scalar y;
-                Scalar z;
-            };
-        };
-
-        constexpr Scalar operator[](uint i) const { return data[i]; }
-
-        Scalar &operator[](uint i) { return data[i]; }
-    };
-
-    template<uint d, class Scalar>
     struct point {
-        point_data<d, Scalar> data;
+        Scalar data[d]{0};
 
         template<class F>
         explicit operator point<d, F>() const {
