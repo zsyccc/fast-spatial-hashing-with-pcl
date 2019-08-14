@@ -13,13 +13,15 @@
 using namespace std;
 using namespace pcl;
 const int default_number_samples = 100000;
-const float default_leaf_size = 0.01f;
+float default_leaf_size;
 
 int main(int argc, char **argv) {
     if (argc < 2) {
         console::print_error("no enough param\n");
         return (-1);
     }
+
+    sscanf(argv[2],"%f",&default_leaf_size);
 
     std::vector<int> obj_file_indices =
             console::parse_file_extension_argument(argc, argv, ".obj");
