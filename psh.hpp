@@ -94,7 +94,7 @@ namespace psh {
 
             point<layer_dimension, PosInt> p2;
             for (uint i = 0; i < layer_dimension; i++) {
-                p2[i] = std::floor(p.data[i] * zoom);
+                p2[i] = std::round(p.data[i] * zoom);
             }
             if (!mapping.count(p2)) throw std::out_of_range("Element not found in map in fsh get");
             IndexInt bucket = mapping[p2];
@@ -137,7 +137,7 @@ namespace psh {
                 for (auto index : partition[bucket]) {
                     point<layer_dimension, PosInt> p;
                     for (uint i = 0; i < layer_dimension; i++) {
-                        p[i] = std::floor(cloud->points[index].data[i] * zoom);
+                        p[i] = std::round(cloud->points[index].data[i] * zoom);
                     }
                     mapping[p] = bucket;
                 }
@@ -439,10 +439,10 @@ namespace psh {
                     return ret;
                 } catch (std::out_of_range &e) {
                     std::cout << res << std::endl;
-//                    std::cout << "rotation:\n" << rotation_matrix << std::endl;
-//                    std::cout << "translation:\n" << translation_matrix << std::endl;
-//                    std::cout << "scale:\n" << scale_matrix << std::endl;
-//                    std::cout << "all:\n" << transformation_matrix << std::endl;
+                    std::cout << "rotation:\n" << rotation_matrix << std::endl;
+                    std::cout << "translation:\n" << translation_matrix << std::endl;
+                    std::cout << "scale:\n" << scale_matrix << std::endl;
+                    std::cout << "all:\n" << transformation_matrix << std::endl;
                     throw e;
                 }
             }
@@ -472,7 +472,7 @@ namespace psh {
                 this->n = _n;
                 this->m_bar = std::ceil(std::pow(n, 1.0f / d));
                 this->m = std::pow(m_bar, d);
-                set_r_bar(std::min(static_cast<int>(std::ceil(std::pow(n / d, 1.0f / d)) - 1), 1));
+                set_r_bar(std::max(static_cast<int>(std::ceil(std::pow(n / d, 1.0f / d)) - 1), 1));
                 this->u_bar = _u_bar;
                 this->u = std::pow(u_bar, d);
                 std::memcpy(this->offset_factor, _offset, sizeof(this->offset_factor));
@@ -624,8 +624,7 @@ namespace psh {
 
                 entry_large() : entry(), location(point<d, PosInt>()) {};
 
-                entry_large(const data_t &data, IndexInt M2)
-                        : entry(data, M2), location(data.location) {};
+                entry_large(const data_t &data, IndexInt M2) : entry(data, M2), location(data.location) {};
 
                 void rehash(IndexInt M2) {
                     entry::rehash(location, M2, entry::k + 1);
