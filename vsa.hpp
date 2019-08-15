@@ -93,10 +93,7 @@ public:
                        point.z * proxy.normal_z -
                        (proxy.x * proxy.normal_x + proxy.y * proxy.normal_y +
                         proxy.z * proxy.normal_z);
-            float t2 = proxy.normal_x * proxy.normal_x +
-                       proxy.normal_y * proxy.normal_y +
-                       proxy.normal_z * proxy.normal_z;
-            return sqrt(t1 * t1 / t2);
+            return std::fabs(t1);
         } else if (metric_option == 2) {
             PointNormalT p;
             pcl::copyPoint(point, p);
