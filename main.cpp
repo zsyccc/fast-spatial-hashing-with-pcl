@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
     sscanf(argv[3],"%d",&metric);
     sscanf(argv[4],"%f",&eps);
     sscanf(argv[5],"%d",&k);
-    printf("leaf size=%f,metric=%d,eps=%f,k=%d\n",default_leaf_size,metric,eps,k);
+    printf("leaf size=%f,metric=%d,eps=%f,k=%d\n",default_leaf_size,metric,eps,k);  //debug
     // clustering
     VSA vsa;
     vsa.setInputCloud(pNormal);

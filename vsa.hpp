@@ -6,7 +6,6 @@
 #include <pcl/pcl_macros.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
-// #include <pcl/features/feature.h>
 #include <pcl/kdtree/flann.h>
 #include <random>
 #include <queue>
@@ -271,7 +270,6 @@ public:
         // merge 2 proxies and insert 1 proxy for each iteration
         // barycenters[i] <=> proxies[order[i]] <=>
         // cur_partition[order[i]]
-
         std::vector<int> order(k);
         for (int i = 0; i < k; i++) order[i] = i;
         sort(order.begin(), order.end(), [&barycenters](int x, int y) {
@@ -391,7 +389,6 @@ public:
                     barycenters);  // initialize for the very first partitioning
             flooding(barycenters, cur_partition, point_priority_queue,knn_search_k);
             if (generation % 3 == 2) teleportation(barycenters, cur_partition);
-
             // proxy fitting
             proxies.clear();
             for (int i = 0; i < k; i++) {
@@ -399,7 +396,6 @@ public:
                 proxy_fitting(cur_partition[i], proxy);
                 proxies.push_back(proxy);
             }
-
             get_barycenters(barycenters, cur_partition);
 
             total_error_new = get_total_error(cur_partition);
@@ -407,11 +403,6 @@ public:
             generation++;
         }
 
-        int cnt = 0;
-        for (auto& region : cur_partition) {
-            cnt += region.size();
-        }
-        printf("%lu %d\n", cloud->size(), cnt);
         return cur_partition;
     }
 };
