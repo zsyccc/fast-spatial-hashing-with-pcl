@@ -56,7 +56,7 @@ namespace psh {
 
         std::unordered_map<point<layer_dimension, PosInt>, IndexInt> mapping;
 
-        map(IndexInt n, float precision);
+        map(IndexInt n, float precision, int k);
 
     public:
         // number of data points
@@ -83,10 +83,11 @@ namespace psh {
         using data_function = std::function<data_t(IndexInt)>;
         using data_normal_function = std::function<data_normal_t(IndexInt)>;
         using content_function = std::function<T(IndexInt)>;
+        using content_bucket_function = std::function<T(IndexInt, IndexInt)>;
 
-        map(const data_normal_function &data_normal, IndexInt n, float precision);
+        map(const data_normal_function &data_normal, IndexInt n, float precision, int k);
 
-        map(const data_function &data, IndexInt n, float precision);
+        map(const data_function &data, IndexInt n, float precision, int k);
 
         T &get(const pcl::PointXYZ &p) {
             float zoom = 1.0f / precision;
@@ -145,13 +146,11 @@ namespace psh {
 
         void init_map(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud, const content_function &content) {
             // show_cloud(cloud);
-            const int k = 6;
-            part_num = k;
             VSA vsa;
             vsa.setInputCloud<pcl::PointNormal>(cloud);
             vsa.setMetricOption(2);
-            vsa.setEps(1);
-            vsa.setK(k);
+            vsa.setEps(10);
+            vsa.setK(part_num);
             auto res = vsa.compute();
             auto proxies = vsa.getProxies();
             save_mapping(cloud, res);
@@ -166,12 +165,12 @@ namespace psh {
 //#endif
 
             std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> transformed_clouds;
-            std::generate_n(std::back_inserter(transformed_clouds), k, [] {
+            std::generate_n(std::back_inserter(transformed_clouds), part_num, [] {
                 pcl::PointCloud<pcl::PointNormal>::Ptr ret(new pcl::PointCloud<pcl::PointNormal>);
                 return ret;
             });
 
-            for (int bucket = 0; bucket < k; bucket++) {
+            for (int bucket = 0; bucket < part_num; bucket++) {
                 // load source cloud
                 pcl::PointCloud<pcl::PointNormal>::Ptr source(new pcl::PointCloud<pcl::PointNormal>);
                 source->points.reserve(res[bucket].size());
@@ -186,7 +185,29 @@ namespace psh {
 //                transform_matrix(2, 3) = 0.1f * static_cast<float>(bucket);
                 pcl::transformPointCloud(*source, *transformed_clouds[bucket], transform_matrix);
             }
-            Eigen::Vector3f v = Eigen::Vector3f::Zero();
+
+            std::ofstream fout("mapping1.txt");
+            for (int bucket = 0; bucket < part_num; bucket++) {
+                pcl::PointCloud<pcl::PointNormal>::Ptr source(new pcl::PointCloud<pcl::PointNormal>);
+                source->points.reserve(res[bucket].size());
+                for (auto point_index: res[bucket]) {
+                    source->points.push_back(cloud->points[point_index]);
+                }
+
+
+                const auto &proxy = proxies[bucket];
+                Eigen::Vector3f N(proxy.normal_x, proxy.normal_y, proxy.normal_z);
+                Eigen::Vector3f X(0.0f, 0.0f, 1.0f);
+                Eigen::Matrix4f transform_matrix = get_rotation_matrix(N, X);
+
+                fout << "matrix:" << '\n' << transform_matrix << std::endl;
+                for (size_t index = 0; index < res[bucket].size(); index++) {
+                    fout << bucket << ' ' << source->points[index] << "->" << transformed_clouds[bucket]->points[index]
+                         << std::endl;
+                }
+            }
+            fout.close();
+
 
 #ifdef PSH_DEBUG
             // debug: draw
@@ -218,7 +239,9 @@ namespace psh {
             viewer2.spin();
             // end debug
 #endif
-            create_hash_buckets(transformed_clouds, proxies, content);
+            create_hash_buckets(transformed_clouds, proxies, [&](IndexInt bucket, IndexInt i) {
+                return content(res[bucket][i]);
+            });
         }
 
         void init_layer(
@@ -261,48 +284,46 @@ namespace psh {
                 return ok;
             };
             auto search_zoom_factor_func = [&](float L, float R, float step, uint mask) -> float {
-                float zoom_factor[d];
-                while (R - L >= step) {
+                R += step;
+                float last_ok = R;
+                while (R - L > step / 10.0f) {
                     float M = L + (R - L) / 2.0f;
-                    for (uint i = 0; i < d; i++) {
-                        if (mask & ((uint) 1 << i)) {
-                            zoom_factor[i] = M;
-                        }
-                    }
-                    layer.setZoom(zoom_factor, mask);
+                    layer.setZoom(M, mask);
                     convert_points(layer, cloud, out);
                     if (ok_func(out)) {
-                        R = M - step;
+                        last_ok = M;
+                        R = M;
                     } else {
-                        L = M + step;
+                        L = M;
                     }
                 }
-                for (uint i = 0; i < d; i++) {
-                    if (mask & ((uint) 1 << i)) {
-                        zoom_factor[i] = R;
-                    }
-                }
-                layer.setZoom(zoom_factor, mask);
-                assert(R < 5.0f);
-                return R;
+                layer.setZoom(last_ok, mask);
+                convert_points(layer, cloud, out);
+                assert(L < 100.0f);
+                return L;
             };
 
             float step = 0.01f;
-            float res = search_zoom_factor_func(0.5f, 5.0f, step, 7);
-            for (uint i = 0; i < 3; i++) {
+            float res = search_zoom_factor_func(0.5f, 100.0f, step, 7);
+            VALUE(res);
+            assert(ok_func(out));
+            for (uint i = 2; i < d; i++) {
                 float start = 0.5f;
                 if (i == 2) start = 0.0f;
-                search_zoom_factor_func(start, res, step, (uint) 1 << i);
+                auto res2 = search_zoom_factor_func(start, res, step, static_cast<uint>(1u << i));
+                VALUE(res2);
+                assert(ok_func(out));
             }
 
-            convert_points(layer, cloud, out);
             static int cnt = 0;
             cnt++;
             char filename[10];
             sprintf(filename, "out%d.txt", cnt);
             std::ofstream fout(filename);
+            fout << "translation_matrix\n" << layer.get_translation_matrix() << std::endl;
+            fout << "scale_matrix\n" << layer.get_scale_matrix() << std::endl;
             for (IndexInt i = 0; i < _n; i++) {
-                fout << out[i] << std::endl;
+                fout << cloud->points[i] << "->" << out[i] << std::endl;
             }
             fout.close();
         }
@@ -322,7 +343,7 @@ namespace psh {
             for (IndexInt i = 0; i < cloud->points.size(); i++) {
                 const auto &point = transformed_cloud->points[i];
                 for (uint j = 0; j < d; j++) {
-                    out[i][j] = (PosInt) std::floor(point.data[j]);
+                    out[i][j] = (PosInt) std::round(point.data[j]);
                 }
             }
         }
@@ -330,19 +351,20 @@ namespace psh {
         void create_hash_buckets(
                 const std::vector<pcl::PointCloud<pcl::PointNormal>::Ptr> &clouds,
                 const std::vector<VSA::Proxy> &proxies,
-                const content_function &content) {
+                const content_bucket_function &content) {
             assert(part_num == clouds.size());
 
             hash_buckets.resize(part_num);
-            for (IndexInt i = 0; i < part_num; i++) {
+            for (IndexInt bucket = 0; bucket < part_num; bucket++) {
                 bool create_succeed = false;
-                layer_map &layer = hash_buckets[i];
-                const pcl::PointCloud<pcl::PointNormal>::Ptr &layer_cloud = clouds[i];
+                layer_map &layer = hash_buckets[bucket];
+                const pcl::PointCloud<pcl::PointNormal>::Ptr &layer_cloud = clouds[bucket];
                 std::vector<decltype(layer_map::data_t::location)> scaled_cloud;
-                init_layer(layer, layer_cloud, proxies[i], scaled_cloud);
+                init_layer(layer, layer_cloud, proxies[bucket], scaled_cloud);
                 layer.build([&](IndexInt i) {
-                    return typename layer_map::data_t(scaled_cloud[i], content(i));
+                    return typename layer_map::data_t(scaled_cloud[i], content(bucket, i));
                 });
+
             }
         }
 
@@ -407,12 +429,22 @@ namespace psh {
                 auto scale_matrix = get_scale_matrix();
                 auto transformation_matrix = scale_matrix * translation_matrix * rotation_matrix;
                 Eigen::Vector4f in_point(p.x, p.y, p.z, 1.0f);
-                Eigen::Vector4f transformed_point = translation_matrix * in_point;
+                Eigen::Vector4f transformed_point = transformation_matrix * in_point;
                 point<d, PosInt> res;
                 for (uint i = 0; i < d; i++) {
-                    res[i] = std::floor(transformed_point[i]);
+                    res[i] = std::round(transformed_point[i]);
                 }
-                return get(res);
+                try {
+                    auto &ret = get(res);
+                    return ret;
+                } catch (std::out_of_range &e) {
+                    std::cout << res << std::endl;
+//                    std::cout << "rotation:\n" << rotation_matrix << std::endl;
+//                    std::cout << "translation:\n" << translation_matrix << std::endl;
+//                    std::cout << "scale:\n" << scale_matrix << std::endl;
+//                    std::cout << "all:\n" << transformation_matrix << std::endl;
+                    throw e;
+                }
             }
 
             const T &get(const pcl::PointXYZ &p) const { return get(p); }
@@ -440,8 +472,7 @@ namespace psh {
                 this->n = _n;
                 this->m_bar = std::ceil(std::pow(n, 1.0f / d));
                 this->m = std::pow(m_bar, d);
-//                set_r_bar(std::ceil(std::pow(n / d, 1.0f / d)) - 1);
-                set_r_bar(0);
+                set_r_bar(std::min(static_cast<int>(std::ceil(std::pow(n / d, 1.0f / d)) - 1), 1));
                 this->u_bar = _u_bar;
                 this->u = std::pow(u_bar, d);
                 std::memcpy(this->offset_factor, _offset, sizeof(this->offset_factor));
@@ -455,10 +486,10 @@ namespace psh {
                 zoom_factor[2] = z;
             }
 
-            void setZoom(const float _zoom_factor[d], uint mask) {
+            void setZoom(float val, uint mask) {
                 for (uint i = 0; i < d; i++) {
-                    if (mask & ((uint) 1 << i)) {
-                        zoom_factor[i] = _zoom_factor[i];
+                    if (mask & static_cast<uint>(1u << i)) {
+                        zoom_factor[i] = val;
                     }
                 }
             }
@@ -499,13 +530,20 @@ namespace psh {
                 VALUE(M1);
                 VALUE(M2);
 
+                std::ofstream fout("out.txt");
+                for (IndexInt i = 0; i < n; i++) {
+                    fout << data(i).location << std::endl;
+                }
+                fout.close();
+
                 std::uniform_int_distribution<IndexInt> m_dist(0, m - 1);
+                std::uniform_int_distribution<IndexInt> d_dist(1, d);
                 bool create_succeeded = false;
                 int fail = -1;
                 do {
                     // if we fail, we try again with a larger offset table
                     fail++;
-                    set_r_bar(r_bar + d);
+                    set_r_bar(r_bar + d_dist(generator));
 
                     VALUE(r);
                     VALUE(uint(r_bar));
@@ -519,7 +557,7 @@ namespace psh {
 
             T &get(const point<d, PosInt> &p) {
                 // find where the element would be located
-                auto i = point_to_index(h(p), m_bar, m);
+                auto i = point_to_index(h(p), u_bar, m);
                 // but also check that they are equal (have the same positional
                 // hash)
                 if (H[i].equals(p, M2))
@@ -537,7 +575,7 @@ namespace psh {
             struct bucket : public std::vector<data_t> {
                 IndexInt phi_index;
 
-                bucket(IndexInt phi_index) : phi_index(phi_index) {}
+                explicit bucket(IndexInt phi_index) : phi_index(phi_index) {}
 
                 friend bool operator<(const bucket &lhs, const bucket &rhs) {
                     return lhs.size() > rhs.size();
@@ -612,12 +650,9 @@ namespace psh {
 
             // returns a random prime from a small predefined list
             IndexInt prime() {
-                static const std::vector<IndexInt> primes{
-                        53, 97, 193, 389, 769, 1543,
-                        3079, 6151, 12289, 24593, 49157, 98317,
-                        196613, 393241, 786433, 1572869, 3145739, 6291469};
-                static std::uniform_int_distribution<IndexInt> prime_dist(
-                        0, primes.size() - 1);
+                static const std::vector<IndexInt> primes{53, 97, 193, 389, 769, 1543, 3079, 6151, 12289, 24593, 49157,
+                                                          98317, 196613, 393241, 786433, 1572869, 3145739, 6291469};
+                static std::uniform_int_distribution<IndexInt> prime_dist(0, primes.size() - 1);
 
                 return primes[prime_dist(generator)];
             }
@@ -642,7 +677,7 @@ namespace psh {
                 for (IndexInt i = 0; i < buckets.size(); i++) {
                     // if a bucket is empty, then the rest will also be empty
                     if (buckets[i].size() == 0) break;
-                    if (i % (buckets.size() / 10) == 0)
+                    if ((i * 10) % buckets.size() <= 10)
                         std::cout << (100 * i) / buckets.size() << "% done" << std::endl;
 
                     // try to jiggle the offsets until an injective mapping is found
@@ -650,14 +685,21 @@ namespace psh {
                         return false;
                     }
                 }
-
                 std::cout << "done!" << std::endl;
                 phi = std::move(phi_hat);
                 if (!hash_positions(data, H_hat)) return false;
                 H.reserve(H_hat.size());
                 std::copy(H_hat.begin(), H_hat.end(), std::back_inserter(H));
 
-                return true;
+                int cnt = 0;
+                for (auto &&it : H_b_hat) {
+                    if (it) cnt++;
+                }
+
+                VALUE(cnt);
+                VALUE(n);
+
+                return cnt == n;
             }
 
             // certain values for m_bar and r_bar are bad, empirically found to be
@@ -686,7 +728,6 @@ namespace psh {
                 }
 
                 std::cout << "buckets created" << std::endl;
-
                 sort(buckets.begin(), buckets.end());
                 std::cout << "buckets sorted" << std::endl;
 
@@ -704,25 +745,22 @@ namespace psh {
                 bool found = false;
                 point<d, PosInt> found_offset;
 
-                for (IndexInt i = 0; i < r && !found; i++) {
+                for (IndexInt i = 0; i < m && !found; i++) {
                     // wrap around m to stay inside the table
-                    auto phi_offset = index_to_point<d>(
-                            (start_offset + i) % m, m_bar, m);
+                    auto phi_offset = index_to_point<d>((start_offset + i) % m, m_bar, m);
 
                     bool collision = false;
                     for (auto &element : b) {
                         auto h0 = element.location * M0;
                         auto h1 = element.location * M1;
                         auto index = point_to_index(h1, r_bar, r);
-                        // use existing offsets for others, but if
-                        // the current index is the one we're
+                        // use existing offsets for others, but if the current index is the one we're
                         // jiggling, we use the temporary offset
                         auto offset = index == b.phi_index ? phi_offset : phi_hat[index];
                         auto hash = h0 + offset;
 
-                        // if the index is already used, this offset
-                        // is invalid
-                        collision = H_b_hat[point_to_index(hash, m_bar, m)];
+                        // if the index is already used, this offset is invalid
+                        collision = H_b_hat[point_to_index(hash, u_bar, m)];
                         if (collision) break;
                     }
 
@@ -747,13 +785,17 @@ namespace psh {
             // permanently inserts a bucket into a temporary hash table
             void insert(const bucket &b, std::vector<entry_large> &H_hat,
                         std::vector<bool> &H_b_hat, const decltype(phi) &phi_hat) {
+                std::ofstream fout("outinsert.txt");
                 for (auto &element : b) {
                     auto hashed = h(element.location, phi_hat);
-                    auto i = point_to_index(hashed, m_bar, m);
+                    auto i = point_to_index(hashed, u_bar, m);
                     H_hat[i] = entry_large(element, M2);
                     // mark off the slot as used
                     H_b_hat[i] = true;
+                    fout << i << std::endl;
+                    fout << element.location << std::endl;
                 }
+                fout.close();
             }
 
             bool hash_positions(const data_function &data, std::vector<entry_large> &H_hat) {
@@ -770,8 +812,7 @@ namespace psh {
                 {
                     std::vector<bool> data_b(domain_i_max);
                     for (IndexInt i = 0; i < n; i++) {
-                        data_b[point_to_index(data(i).location, u_bar,
-                                              domain_i_max)] = true;
+                        data_b[point_to_index(data(i).location, u_bar, domain_i_max)] = true;
                     }
                     for (IndexInt i = 0; i < domain_i_max; i++) {
                         if (data_b[i]) {
@@ -779,7 +820,7 @@ namespace psh {
                         }
 
                         auto p = index_to_point<d, PosInt>(i, u_bar, domain_i_max);
-                        auto l = point_to_index(h(p), m_bar, m);
+                        auto l = point_to_index(h(p), u_bar, m);
 
                         // if their position hash collides with the existing
                         // element..
@@ -800,7 +841,7 @@ namespace psh {
                     // for each point p in original image
 
                     auto p = index_to_point<d, PosInt>(i, u_bar, domain_i_max);
-                    auto l = point_to_index(h(p), m_bar, m);
+                    auto l = point_to_index(h(p), u_bar, m);
 
                     // collect everyone that maps to the same thing
                     if (indices[l]) {
@@ -854,10 +895,11 @@ namespace psh {
     }
 
     template<class T>
-    map<T>::map(map::IndexInt n, float precision) : n(n), precision(precision) {}
+    map<T>::map(map::IndexInt n, float precision, int k) : n(n), precision(precision), part_num(k) {}
 
     template<class T>
-    map<T>::map(const map::data_normal_function &data_normal, map::IndexInt n, float precision) : map(n, precision) {
+    map<T>::map(const map::data_normal_function &data_normal, map::IndexInt n, float precision, int k)
+            : map(n, precision, k) {
         pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normal(new pcl::PointCloud<pcl::PointNormal>);
         cloud_with_normal->points.reserve(n);
         for (IndexInt i = 0; i < n; i++) {
@@ -872,7 +914,7 @@ namespace psh {
     }
 
     template<class T>
-    map<T>::map(const map::data_function &data, map::IndexInt n, float precision) : map(n, precision) {
+    map<T>::map(const map::data_function &data, map::IndexInt n, float precision, int k) : map(n, precision, k) {
         pcl::PointCloud<pcl::PointXYZ>::Ptr inCloud(new pcl::PointCloud<pcl::PointXYZ>);
         inCloud->points.reserve(n);
         for (IndexInt i = 0; i < n; i++) {
