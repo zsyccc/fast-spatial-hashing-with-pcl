@@ -98,8 +98,13 @@ namespace psh {
             }
             if (!mapping.count(p2)) throw std::out_of_range("Element not found in map in fsh get");
             IndexInt bucket = mapping[p2];
-
-            return hash_buckets[bucket].get(p);
+            try {
+                auto &ret = hash_buckets[bucket].get(p);
+                return ret;
+            } catch (const std::out_of_range &e) {
+                VALUE(bucket);
+                throw e;
+            }
         }
 
         const T &get(const pcl::PointXYZ &p) const { return get(p); }
@@ -557,7 +562,7 @@ namespace psh {
 
             T &get(const point<d, PosInt> &p) {
                 // find where the element would be located
-                auto i = point_to_index(h(p), u_bar, m);
+                auto i = point_to_index(h(p), m_bar, m);
                 // but also check that they are equal (have the same positional
                 // hash)
                 if (H[i].equals(p, M2))
@@ -759,16 +764,14 @@ namespace psh {
                         auto hash = h0 + offset;
 
                         // if the index is already used, this offset is invalid
-                        collision = H_b_hat[point_to_index(hash, u_bar, m)];
+                        collision = H_b_hat[point_to_index(hash, m_bar, m)];
                         if (collision) break;
                     }
 
                     // if there were no collisions, we succeeded
                     if (!collision) {
-                        if (!found) {
-                            found = true;
-                            found_offset = phi_offset;
-                        }
+                        found = true;
+                        found_offset = phi_offset;
                     }
                 }
 
@@ -787,7 +790,7 @@ namespace psh {
                 std::ofstream fout("outinsert.txt");
                 for (auto &element : b) {
                     auto hashed = h(element.location, phi_hat);
-                    auto i = point_to_index(hashed, u_bar, m);
+                    auto i = point_to_index(hashed, m_bar, m);
                     H_hat[i] = entry_large(element, M2);
                     // mark off the slot as used
                     H_b_hat[i] = true;
@@ -819,7 +822,7 @@ namespace psh {
                         }
 
                         auto p = index_to_point<d, PosInt>(i, u_bar, domain_i_max);
-                        auto l = point_to_index(h(p), u_bar, m);
+                        auto l = point_to_index(h(p), m_bar, m);
 
                         // if their position hash collides with the existing
                         // element..
@@ -840,7 +843,7 @@ namespace psh {
                     // for each point p in original image
 
                     auto p = index_to_point<d, PosInt>(i, u_bar, domain_i_max);
-                    auto l = point_to_index(h(p), u_bar, m);
+                    auto l = point_to_index(h(p), m_bar, m);
 
                     // collect everyone that maps to the same thing
                     if (indices[l]) {

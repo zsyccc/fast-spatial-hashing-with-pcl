@@ -29,8 +29,7 @@ int main(int argc, char **argv) {
     console::parse_argument(argc, argv, "-k", k);
 
 
-    std::vector<int> obj_file_indices =
-            console::parse_file_extension_argument(argc, argv, ".obj");
+    std::vector<int> obj_file_indices = console::parse_file_extension_argument(argc, argv, ".obj");
 
     if (obj_file_indices.size() != 1) {
         console::print_error("Need a single input OBJ file to continue.\n");
