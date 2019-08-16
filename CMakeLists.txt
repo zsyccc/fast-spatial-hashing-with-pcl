@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.0)
 project(fsh)
 
 find_package(PCL 1.9 REQUIRED)
+find_package(Eigen3)
 
 if( CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR )
     message( FATAL_ERROR "Please select another Build Directory ! (and give it a clever name, like build/)" )
@@ -13,10 +14,9 @@ if( CMAKE_BINARY_DIR MATCHES " " )
 	message( "Your Build Directory contains spaces. If you experience problems when compiling, this can be the cause." )
 endif()
 
-
-
 include_directories(
     ${PCL_INCLUDE_DIRS}
+    ${EIGEN3_INCLUDE_DIR}
     .
 )
 
@@ -41,10 +41,8 @@ add_executable(fsh
     main.cpp
     mesh_sampling.h
     mesh_sampling.cpp
-    # voxelize.hpp
-    # voxelize.cpp
-    # point.hpp
-)
+    vsa.hpp
+        point.hpp util.hpp)
 
 target_link_libraries (fsh 
     ${PCL_LIBRARIES}
