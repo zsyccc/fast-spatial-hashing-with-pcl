@@ -1,3 +1,5 @@
+#pragma once
+
 #ifndef _VSA_HPP_
 #define _VSA_HPP_
 
@@ -141,11 +143,14 @@ public:
           eps(0.1),
           k(100) {}
 
-    void setInputCloud(const pcl::PointCloud<pcl::PointNormal>::Ptr in) {
+    template <typename PointT>
+    void setInputCloud(const typename pcl::PointCloud<PointT>::Ptr in) {
         pcl::copyPointCloud(*in, *cloud);
     }
 
-    void setMetricOption(int option) { this->metric_option = option; }
+    void setMetricOption(int metric_option) {
+        this->metric_option = metric_option;
+    }
 
     void setEps(float eps) { this->eps = eps; }
 
@@ -402,6 +407,8 @@ public:
 
         return cur_partition;
     }
+
+    const std::vector<Proxy>& getProxies() const { return proxies; }
 };
 
 #endif
