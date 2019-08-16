@@ -16,6 +16,9 @@ const int default_number_samples = 100000;
 const float default_leaf_size = 0.01f;
 
 int main(int argc, char **argv) {
+    using pixel = size_t;
+    using map = psh::map<pixel>;
+
     if (argc < 2) {
         console::print_error("no enough param\n");
         return (-1);
@@ -25,8 +28,11 @@ int main(int argc, char **argv) {
     console::parse_argument(argc, argv, "-n_samples", sample_points);
     float leaf_size = default_leaf_size;
     console::parse_argument(argc, argv, "-leaf_size", leaf_size);
-    int k = 6;
-    console::parse_argument(argc, argv, "-k", k);
+
+    map::VSAOption vsaOption(6, 0.01f, 2);
+    console::parse_argument(argc, argv, "-k", vsaOption.part_num);
+    console::parse_argument(argc, argv, "-eps", vsaOption.eps);
+    console::parse_argument(argc, argv, "-metric", vsaOption.metricOption);
 
 
     std::vector<int> obj_file_indices = console::parse_file_extension_argument(argc, argv, ".obj");
@@ -36,11 +42,7 @@ int main(int argc, char **argv) {
         return (-1);
     }
     const char *filename = argv[obj_file_indices[0]];
-    PointCloud<PointXYZ>::Ptr voxel_cloud =
-            mesh_sampling(filename, sample_points, leaf_size);
-
-    using pixel = size_t;
-    using map = psh::map<pixel>;
+    PointCloud<PointXYZ>::Ptr voxel_cloud = mesh_sampling(filename, sample_points, leaf_size);
 
 //    PointCloud<Normal>::Ptr normals = get_normals(voxel_cloud);
 //    PointCloud<PointNormal>::Ptr pNormal(new PointCloud<PointNormal>);
@@ -62,10 +64,11 @@ int main(int argc, char **argv) {
         return map::data_t(point, i);
     };
 
-    map s(get_data_func, voxel_cloud->points.size(), leaf_size, k);
+    map s(get_data_func, voxel_cloud->points.size(), leaf_size, vsaOption);
 
 
     std::cout << "exhaustive test" << std::endl;
+    int cnt = 0;
     for (size_t i = 0; i < voxel_cloud->points.size(); i++) {
         try {
             size_t data = s.get(get_data_func(i).location);
@@ -74,27 +77,12 @@ int main(int argc, char **argv) {
             }
         } catch (const std::out_of_range &e) {
             std::cout << e.what() << ' ' << get_data_func(i).location << std::endl;
+            cnt++;
         }
     }
+    std::cout << "fail = " << cnt << std::endl;
+    std::cout << "total = " << voxel_cloud->points.size() << std::endl;
     std::cout << "done" << std::endl;
-//    point p = psh::index_to_point<d>(i, width, DataInt(-1));
-//    pixel exists = data_b.count(i);
-//    try {
-//        s.get(p);
-//        if (!exists) {
-//            std::cout << "found non-existing element!" << std::endl;
-//            std::cout << p << std::endl;
-//        }
-//    } catch (const std::out_of_range &e) {
-//        if (exists) {
-//            std::cout << "didn't find existing element!" << std::endl;
-//            std::cout << p << std::endl;
-//        }
-//    }
-//}
-//
-//);
-//std::cout << "finished!" <<
-//std::endl;
+
     return 0;
 }

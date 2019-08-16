@@ -34,6 +34,16 @@ namespace psh {
 
     template<class T>
     class map {
+    public:
+        struct VSAOption {
+            int part_num;
+            float eps;
+            int metricOption;
+
+            VSAOption(int partNum, float eps, int metricOption)
+                    : part_num(partNum), eps(eps), metricOption(metricOption) {}
+        };
+
     private:
         using IndexInt = size_t;
         using PosInt = uint32_t;
@@ -56,9 +66,10 @@ namespace psh {
 
         std::unordered_map<point<layer_dimension, PosInt>, IndexInt> mapping;
 
-        map(IndexInt n, float precision, int k);
+        map(IndexInt n, float precision, VSAOption option);
 
     public:
+
         // number of data points
         struct data_t {
             pcl::PointXYZ location;
@@ -85,9 +96,9 @@ namespace psh {
         using content_function = std::function<T(IndexInt)>;
         using content_bucket_function = std::function<T(IndexInt, IndexInt)>;
 
-        map(const data_normal_function &data_normal, IndexInt n, float precision, int k);
+        map(const data_normal_function &data_normal, IndexInt n, float precision, VSAOption option);
 
-        map(const data_function &data, IndexInt n, float precision, int k);
+        map(const data_function &data, IndexInt n, float precision, VSAOption option);
 
         T &get(const pcl::PointXYZ &p) {
             float zoom = 1.0f / precision;
@@ -149,23 +160,31 @@ namespace psh {
             }
         }
 
-        void init_map(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud, const content_function &content) {
+        void
+        init_map(const pcl::PointCloud<pcl::PointNormal>::Ptr &cloud, const content_function &content,
+                 const VSAOption &option) {
             // show_cloud(cloud);
             VSA vsa;
             vsa.setInputCloud<pcl::PointNormal>(cloud);
-            vsa.setMetricOption(2);
-            vsa.setEps(10);
-            vsa.setK(part_num);
+            vsa.setMetricOption(option.metricOption);
+            vsa.setEps(option.eps);
+            assert(part_num == option.part_num);
+            vsa.setK(option.part_num);
             auto res = vsa.compute();
             auto proxies = vsa.getProxies();
             save_mapping(cloud, res);
 
 //#ifdef PSH_DEBUG
             // debug: print the size of each bucket
+            std::unordered_set<int> set;
             for (const auto &it : res) {
                 std::cout << it.size() << ' ';
+                for (auto index : it) {
+                    set.insert(index);
+                }
             }
             std::cout << std::endl;
+            assert(set.size() == n);
             // end debug
 //#endif
 
@@ -312,18 +331,17 @@ namespace psh {
             float res = search_zoom_factor_func(0.5f, 100.0f, step, 7);
             VALUE(res);
             assert(ok_func(out));
-            for (uint i = 2; i < d; i++) {
-                float start = 0.5f;
-                if (i == 2) start = 0.0f;
-                auto res2 = search_zoom_factor_func(start, res, step, static_cast<uint>(1u << i));
-                VALUE(res2);
-                assert(ok_func(out));
-            }
+//            for (uint i = 2; i < d; i++) {
+//                float start = 0.5f;
+//                if (i == 2) start = 0.0f;
+//                auto res2 = search_zoom_factor_func(start, res, step, static_cast<uint>(1u << i));
+//                VALUE(res2);
+//                assert(ok_func(out));
+//            }
 
             static int cnt = 0;
-            cnt++;
             char filename[10];
-            sprintf(filename, "out%d.txt", cnt);
+            sprintf(filename, "out%d.txt", cnt++);
             std::ofstream fout(filename);
             fout << "translation_matrix\n" << layer.get_translation_matrix() << std::endl;
             fout << "scale_matrix\n" << layer.get_scale_matrix() << std::endl;
@@ -671,7 +689,7 @@ namespace psh {
                 std::vector<bool> H_b_hat(m, false);
                 std::cout << "creating " << r << " buckets" << std::endl;
 
-                if (bad_m_r()) return false;
+                if (m_bar > 2 && bad_m_r()) return false;
 
                 // find out what order we should do the hashing to optimize success
                 // rate
@@ -689,12 +707,6 @@ namespace psh {
                         return false;
                     }
                 }
-                std::cout << "done!" << std::endl;
-                phi = std::move(phi_hat);
-                if (!hash_positions(data, H_hat)) return false;
-                H.reserve(H_hat.size());
-                std::copy(H_hat.begin(), H_hat.end(), std::back_inserter(H));
-
                 int cnt = 0;
                 for (auto &&it : H_b_hat) {
                     if (it) cnt++;
@@ -702,8 +714,15 @@ namespace psh {
 
                 VALUE(cnt);
                 VALUE(n);
+                if (cnt != n) return false;
 
-                return cnt == n;
+                std::cout << "done!" << std::endl;
+                phi = std::move(phi_hat);
+                if (!hash_positions(data, H_hat)) return false;
+                H.reserve(H_hat.size());
+                std::copy(H_hat.begin(), H_hat.end(), std::back_inserter(H));
+
+                return true;
             }
 
             // certain values for m_bar and r_bar are bad, empirically found to be
@@ -897,11 +916,12 @@ namespace psh {
     }
 
     template<class T>
-    map<T>::map(map::IndexInt n, float precision, int k) : n(n), precision(precision), part_num(k) {}
+    map<T>::map(map::IndexInt n, float precision, VSAOption option) : n(n), precision(precision),
+                                                                      part_num(option.part_num) {}
 
     template<class T>
-    map<T>::map(const map::data_normal_function &data_normal, map::IndexInt n, float precision, int k)
-            : map(n, precision, k) {
+    map<T>::map(const map::data_normal_function &data_normal, map::IndexInt n, float precision, VSAOption option)
+            : map(n, precision, option) {
         pcl::PointCloud<pcl::PointNormal>::Ptr cloud_with_normal(new pcl::PointCloud<pcl::PointNormal>);
         cloud_with_normal->points.reserve(n);
         for (IndexInt i = 0; i < n; i++) {
@@ -912,11 +932,12 @@ namespace psh {
         }
         init_map(cloud_with_normal, [&](IndexInt i) -> T {
             return data_normal(i).content;
-        });
+        }, option);
     }
 
     template<class T>
-    map<T>::map(const map::data_function &data, map::IndexInt n, float precision, int k) : map(n, precision, k) {
+    map<T>::map(const map::data_function &data, map::IndexInt n, float precision, VSAOption option) : map(n, precision,
+                                                                                                          option) {
         pcl::PointCloud<pcl::PointXYZ>::Ptr inCloud(new pcl::PointCloud<pcl::PointXYZ>);
         inCloud->points.reserve(n);
         for (IndexInt i = 0; i < n; i++) {
@@ -928,7 +949,7 @@ namespace psh {
         pcl::concatenateFields(*inCloud, *normals, *cloud_with_normal);
         init_map(cloud_with_normal, [&](IndexInt i) -> T {
             return data(i).content;
-        });
+        }, option);
     }
 }
 
