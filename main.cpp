@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
     printf("leaf size=%f,metric=%d,eps=%f,k=%d\n",default_leaf_size,metric,eps,k);  //debug
     // clustering
     VSA vsa;
-    vsa.setInputCloud(pNormal);
+    vsa.setInputCloud<PointNormal>(pNormal);
     vsa.setMetricOption(metric);
     vsa.setEps(eps);
     vsa.setK(k);
